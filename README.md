@@ -16,7 +16,7 @@
 
 **semla** brings the familiar [lavaan](https://lavaan.ugent.be/) model syntax from R to Python. If you know lavaan, you already know semla.
 
-Specify CFA and SEM models with the same `=~`, `~`, and `~~` operators — and get publication-ready fit indices, parameter estimates, and standard errors.
+Specify CFA and SEM models with the same `=~`, `~`, and `~~` operators — and get publication-ready fit indices, parameter estimates, and standard errors. Switch to full Bayesian estimation with `estimator="bayes"` for posterior inference, credible intervals, and model comparison via WAIC and LOO.
 
 ## Installation
 
