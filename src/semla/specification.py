@@ -61,8 +61,13 @@ class ModelSpecification:
         return len(self.all_vars)
 
     @property
+    def _S_free_lower(self) -> np.ndarray:
+        """Boolean mask for free S parameters, lower triangle only."""
+        return np.tril(self.S_free)
+
+    @property
     def n_free(self) -> int:
-        return int(np.sum(self.A_free) + np.sum(self.S_free))
+        return int(np.sum(self.A_free) + np.sum(self._S_free_lower))
 
     def _idx(self, var: str) -> int:
         return self.all_vars.index(var)
@@ -70,7 +75,7 @@ class ModelSpecification:
     def pack_start(self) -> np.ndarray:
         """Pack free parameter starting values into a 1-D vector."""
         a_vals = self.A_values[self.A_free]
-        s_vals = self.S_values[self.S_free]
+        s_vals = self.S_values[self._S_free_lower]
         return np.concatenate([a_vals, s_vals])
 
     def unpack(self, theta: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -79,9 +84,9 @@ class ModelSpecification:
         A = self.A_values.copy()
         S = self.S_values.copy()
         A[self.A_free] = theta[:n_a]
-        S[self.S_free] = theta[n_a:]
-        # S must be symmetric
-        S = (S + S.T) / 2
+        S[self._S_free_lower] = theta[n_a:]
+        # Mirror to upper triangle for symmetry
+        S = np.tril(S) + np.tril(S, -1).T
         return A, S
 
 

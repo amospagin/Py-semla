@@ -110,9 +110,9 @@ class TestBuildSpecification:
         spec = build_specification(tokens, obs, auto_cov_latent=True)
 
         # Free params in A: 4 loadings (2 fixed per factor)
-        # Free params in S: 8 variances + 2 covariance cells (symmetric) = 10
-        # Total: 4 + 10 = 14
-        assert spec.n_free == 14
+        # Free params in S (lower tri only): 8 variances + 1 covariance = 9
+        # Total: 4 + 9 = 13
+        assert spec.n_free == 13
 
     def test_regression_paths(self):
         model = """
