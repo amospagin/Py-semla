@@ -273,10 +273,11 @@ df = HolzingerSwineford1939()
 - [x] Factor score prediction (regression and Bartlett methods)
 - [x] Bootstrap confidence intervals
 - [x] Robust ML estimator (MLR) with Satorra-Bentler scaled chi-square
+- [x] FIML for missing data
 - [x] Input validation and Heywood case warnings
 
 **Future:**
-- [ ] FIML for missing data ([#15](https://github.com/amospagin/semla/issues/15))
+- [ ] Bayesian MCMC estimation ([#18](https://github.com/amospagin/semla/issues/18))
 
 
 ## License

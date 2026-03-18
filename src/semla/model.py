@@ -149,8 +149,44 @@ class Model:
                     self.spec.m_values[idx] = data[var].mean()
 
         # Estimate
+        # Handle missing data
+        missing = kwargs.get("missing", "listwise")
+        obs_vars = self.spec.observed_vars
+        has_missing = data[obs_vars].isna().any().any()
+
+        if has_missing and missing == "listwise":
+            n_total = len(data)
+            data = data.dropna(subset=obs_vars)
+            n_complete = len(data)
+            if n_complete < n_total:
+                warnings.warn(
+                    f"Data contains missing values. {n_total - n_complete} of {n_total} "
+                    f"cases dropped (listwise deletion). "
+                    f"Consider using missing='fiml' to use all available information.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            self.data = data
+
+        # Estimate
         estimator = kwargs.get("estimator", "ML").upper()
-        if estimator in ("ML", "MLR"):
+
+        if missing == "fiml":
+            from .fiml import estimate_fiml
+            # FIML requires mean structure
+            if not self.spec.meanstructure:
+                model_tokens = [tok for tok in self.tokens if tok.op != ":="]
+                self.spec = build_specification(
+                    model_tokens, data.columns.tolist(),
+                    auto_cov_latent=kwargs.get("auto_cov_latent", True),
+                    meanstructure=True,
+                )
+                for i, var in enumerate(self.spec.observed_vars):
+                    idx = self.spec._idx(var)
+                    if self.spec.m_free[idx]:
+                        self.spec.m_values[idx] = data[var].mean()
+            est_result = estimate_fiml(self.spec, data)
+        elif estimator in ("ML", "MLR"):
             est_result = estimate(self.spec, data)
             if estimator == "MLR":
                 est_result._estimator_type = "MLR"

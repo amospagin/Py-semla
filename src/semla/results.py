@@ -42,6 +42,12 @@ class ModelResults:
             self._se = compute_robust_se(
                 self._theta, self._spec, self._sample_cov, self._n_obs, self._gamma,
             )
+        elif getattr(est_result, "_missing_method", None) == "fiml":
+            from .fiml import _compute_se_fiml
+            self._se = _compute_se_fiml(
+                self._theta, self._spec,
+                est_result._pattern_groups, self._n_obs,
+            )
         else:
             self._se = _compute_se(
                 self._theta, self._spec, self._sample_cov, self._n_obs
@@ -102,7 +108,9 @@ class ModelResults:
             data_points += p  # add mean information
         self.df = data_points - self._spec.n_free
 
-        if self._estimator == "DWLS":
+        if getattr(self._est, "_missing_method", None) == "fiml":
+            self.chi_square = self._est._fiml_chi_square
+        elif self._estimator == "DWLS":
             from .dwls import _scaled_chi_square
             self.chi_square, self._scaling_factor = _scaled_chi_square(
                 self._theta, self._spec, self._est.polychoric_cov,
