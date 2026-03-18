@@ -22,11 +22,22 @@ class ModelResults:
         self._theta = est_result.theta
         self._sample_cov = est_result.sample_cov
         self._n_obs = est_result.n_obs
+        self._estimator = getattr(est_result, "estimator_type", "ML")
 
         # Compute standard errors
-        self._se = _compute_se(
-            self._theta, self._spec, self._sample_cov, self._n_obs
-        )
+        if self._estimator == "DWLS":
+            from .dwls import _compute_se_dwls
+            self._se = _compute_se_dwls(
+                self._theta, self._spec,
+                est_result.polychoric_cov,
+                est_result.weight_diagonal,
+                est_result.gamma_diagonal,
+                self._n_obs,
+            )
+        else:
+            self._se = _compute_se(
+                self._theta, self._spec, self._sample_cov, self._n_obs
+            )
 
         # Compute fit indices
         self._compute_fit_indices()
@@ -78,8 +89,17 @@ class ModelResults:
 
         # Chi-square
         self.fmin = self._est.fmin
-        self.chi_square = (n - 1) * self.fmin
         self.df = p * (p + 1) // 2 - self._spec.n_free
+
+        if self._estimator == "DWLS":
+            from .dwls import _scaled_chi_square
+            self.chi_square, self._scaling_factor = _scaled_chi_square(
+                self._theta, self._spec, self._est.polychoric_cov,
+                self._est.gamma_diagonal, n, self.df,
+            )
+        else:
+            self.chi_square = (n - 1) * self.fmin
+
         self.p_value = 1.0 - stats.chi2.cdf(self.chi_square, self.df) if self.df > 0 else np.nan
 
         # Null (independence) model for baseline comparisons
@@ -484,7 +504,7 @@ class ModelResults:
         lines.append("semla 0.1.0 — SEM Results")
         lines.append("=" * 60)
         lines.append("")
-        lines.append(f"  Estimator                                           ML")
+        lines.append(f"  Estimator                                         {self._estimator:>4s}")
         lines.append(f"  Number of observations                         {self._n_obs:>6d}")
         lines.append("")
 
