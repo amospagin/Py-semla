@@ -20,6 +20,76 @@ from .prior_defaults import resolve_priors, _param_key, _matrix_category, PriorS
 from .specification import ModelSpecification, ParamInfo
 
 
+# ---------------------------------------------------------------------------
+# Parallelization
+# ---------------------------------------------------------------------------
+
+def _set_parallel_cores(n_cores: int) -> None:
+    """Configure JAX to use *n_cores* virtual CPU devices for parallel chains.
+
+    Must be called **before** JAX initializes its backend (i.e. before any
+    JAX computation).  If JAX is already initialized with a different device
+    count, a warning is emitted.
+    """
+    import os
+    import sys
+    import warnings
+
+    if n_cores <= 0:
+        raise ValueError(f"cores must be >= 1, got {n_cores}")
+
+    if n_cores == 1:
+        return  # sequential, nothing to configure
+
+    # Check if JAX backend is already initialized
+    jax_mod = sys.modules.get("jax")
+    if jax_mod is not None:
+        try:
+            current = jax_mod.local_device_count()
+            if current >= n_cores:
+                return  # already have enough devices
+            # JAX is initialized but with fewer devices — can't change
+            warnings.warn(
+                f"JAX is already initialized with {current} device(s), "
+                f"but {n_cores} were requested.  Chains will run in "
+                f"batches of {current}.  To use more cores, call "
+                f"semla.set_host_devices({n_cores}) before fitting, "
+                f"or set it at the start of your script.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            return
+        except Exception:
+            pass  # JAX imported but backend not yet started — safe to set
+
+    cur = os.environ.get("XLA_FLAGS", "")
+    if "xla_force_host_platform_device_count" in cur:
+        return  # already configured by the user or a prior call
+    flag = f"--xla_force_host_platform_device_count={n_cores}"
+    os.environ["XLA_FLAGS"] = f"{cur} {flag}".strip()
+
+
+def set_host_devices(n: int) -> None:
+    """Set the number of CPU devices for parallel MCMC chains.
+
+    Call this at the top of your script, **before** any Bayesian model
+    fitting.  Once JAX initializes its backend, the device count is
+    locked for the rest of the process.
+
+    Parameters
+    ----------
+    n : int
+        Number of CPU devices (typically equal to ``chains``).
+
+    Examples
+    --------
+    >>> import semla
+    >>> semla.set_host_devices(4)
+    >>> fit = semla.cfa(model, data, estimator="bayes", chains=4)
+    """
+    _set_parallel_cores(n)
+
+
 def _import_jax():
     try:
         import jax.numpy as jnp
@@ -290,6 +360,7 @@ def run_mcmc(
     num_warmup: int = 1000,
     num_samples: int = 1000,
     num_chains: int = 4,
+    cores: int | None = None,
     seed: int = 0,
     target_accept_prob: float = 0.8,
     adapt_convergence: bool = True,
@@ -314,6 +385,12 @@ def run_mcmc(
         Prior specification.
     num_warmup, num_samples, num_chains : int
         MCMC settings.
+    cores : int or None
+        Number of CPU cores for parallel chain execution.  Defaults to
+        ``num_chains`` (one core per chain).  Set to 1 to force sequential
+        execution.  Must be set before JAX initializes (i.e. on the first
+        Bayesian call in a process).  Later calls that request a different
+        value will warn if JAX is already locked.
     seed : int
         Random seed.
     target_accept_prob : float
@@ -334,14 +411,8 @@ def run_mcmc(
     import warnings
     from .bayes_results import BayesianResults
 
-    # Enable parallel chains on CPU before JAX initializes.
-    # The XLA flag must be set before the JAX backend starts; once set
-    # it persists for the process lifetime (harmless if already set).
-    if num_chains > 1:
-        cur = os.environ.get("XLA_FLAGS", "")
-        flag = f"--xla_force_host_platform_device_count={num_chains}"
-        if "xla_force_host_platform_device_count" not in cur:
-            os.environ["XLA_FLAGS"] = f"{cur} {flag}".strip()
+    n_cores = cores if cores is not None else num_chains
+    _set_parallel_cores(n_cores)
 
     import jax
 

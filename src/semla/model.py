@@ -227,6 +227,7 @@ class Model:
             "num_warmup": kwargs.get("warmup", kwargs.get("num_warmup", 1000)),
             "num_samples": kwargs.get("draws", kwargs.get("num_samples", 1000)),
             "num_chains": kwargs.get("chains", kwargs.get("num_chains", 4)),
+            "cores": kwargs.get("cores", None),
             "seed": kwargs.get("seed", 0),
             "target_accept_prob": kwargs.get("adapt_delta",
                                              kwargs.get("target_accept_prob", 0.8)),
