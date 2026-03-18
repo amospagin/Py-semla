@@ -25,6 +25,7 @@ class MultiGroupSpec:
     group_names: list[str]
     group_specs: list[ModelSpecification]
     group_sample_covs: list[np.ndarray]
+    group_sample_means: list[np.ndarray]
     group_n_obs: list[int]
     n_total: int
     invariance: str  # "configural" or "metric"
@@ -40,6 +41,7 @@ def build_multigroup_spec(
     group_col: str,
     invariance: str = "configural",
     auto_cov_latent: bool = True,
+    meanstructure: bool = False,
 ) -> MultiGroupSpec:
     """Build multi-group specification from parsed syntax and grouped data.
 
@@ -68,9 +70,14 @@ def build_multigroup_spec(
             f"Need at least 2 groups, found {len(groups)} in column '{group_col}'."
         )
 
+    # Scalar and strict invariance require mean structure
+    if invariance in ("scalar", "strict"):
+        auto_cov_latent = True  # force for these levels
+
     group_names = sorted(str(g) for g in groups)
     group_specs = []
     group_sample_covs = []
+    group_sample_means = []
     group_n_obs = []
 
     for gname in group_names:
@@ -85,15 +92,24 @@ def build_multigroup_spec(
             )
 
         spec = build_specification(
-            tokens, gdata.columns.tolist(), auto_cov_latent=auto_cov_latent
+            tokens, gdata.columns.tolist(),
+            auto_cov_latent=auto_cov_latent,
+            meanstructure=meanstructure,
         )
         obs_data = gdata[spec.observed_vars].values
+        # Set intercept starting values from group means
+        if spec.meanstructure and spec.m_values is not None:
+            for i_v, var in enumerate(spec.observed_vars):
+                idx = spec._idx(var)
+                if spec.m_free[idx]:
+                    spec.m_values[idx] = np.mean(obs_data[:, i_v])
         sample_cov = np.cov(obs_data, rowvar=False, ddof=1)
         if sample_cov.ndim == 0:
             sample_cov = sample_cov.reshape(1, 1)
 
         group_specs.append(spec)
         group_sample_covs.append(sample_cov)
+        group_sample_means.append(np.mean(obs_data, axis=0))
         group_n_obs.append(n_g)
 
     n_total = sum(group_n_obs)
@@ -126,15 +142,99 @@ def build_multigroup_spec(
 
         n_free_combined = n_a + n_groups * n_s
 
+    elif invariance == "scalar":
+        # Loadings (A) + intercepts (M) shared; variances/covariances (S) per-group
+        # Requires meanstructure
+        if not group_specs[0].meanstructure:
+            raise ValueError(
+                "Scalar invariance requires mean structure. "
+                "It will be auto-enabled."
+            )
+        n_a = int(np.sum(group_specs[0].A_free))
+        n_s = int(np.sum(group_specs[0]._S_free_lower))
+        n_m = int(np.sum(group_specs[0].m_free)) if group_specs[0].m_free is not None else 0
+
+        theta_mapping = []
+        # Layout: [shared_A | shared_M | group0_S | group1_S | ...]
+        for g in range(n_groups):
+            mapping = np.zeros(k_per_group, dtype=int)
+            mapping[:n_a] = np.arange(n_a)  # shared loadings
+            mapping[n_a:n_a + n_s] = np.arange(n_a + n_m + g * n_s, n_a + n_m + g * n_s + n_s)
+            if n_m > 0:
+                mapping[n_a + n_s:] = np.arange(n_a, n_a + n_m)  # shared intercepts
+            theta_mapping.append(mapping)
+
+        n_free_combined = n_a + n_m + n_groups * n_s
+
+    elif invariance == "strict":
+        # Loadings (A) + intercepts (M) + residual variances shared;
+        # only latent variances/covariances per-group
+        if not group_specs[0].meanstructure:
+            raise ValueError(
+                "Strict invariance requires mean structure. "
+                "It will be auto-enabled."
+            )
+        n_a = int(np.sum(group_specs[0].A_free))
+        n_s = int(np.sum(group_specs[0]._S_free_lower))
+        n_m = int(np.sum(group_specs[0].m_free)) if group_specs[0].m_free is not None else 0
+
+        # Split S params into observed residual variances (shared) and
+        # latent variances/covariances (per-group)
+        s_lower = group_specs[0]._S_free_lower
+        n_vars = group_specs[0].n_vars
+        n_obs_vars = group_specs[0].n_obs
+
+        # Count S params: observed residuals vs latent var/cov
+        n_s_obs = 0  # residual variances of observed vars (shared in strict)
+        n_s_lat = 0  # latent var/cov (per-group)
+        s_is_obs = []  # True if this S param is an observed residual
+        for r in range(n_vars):
+            for c in range(r + 1):
+                if s_lower[r, c]:
+                    is_obs_resid = (r < n_obs_vars and c < n_obs_vars and r == c)
+                    s_is_obs.append(is_obs_resid)
+                    if is_obs_resid:
+                        n_s_obs += 1
+                    else:
+                        n_s_lat += 1
+
+        theta_mapping = []
+        # Layout: [shared_A | shared_M | shared_S_obs | group0_S_lat | group1_S_lat | ...]
+        shared_count = n_a + n_m + n_s_obs
+        for g in range(n_groups):
+            mapping = np.zeros(k_per_group, dtype=int)
+            # A params: shared
+            mapping[:n_a] = np.arange(n_a)
+            # S params: split observed (shared) vs latent (per-group)
+            s_shared_idx = n_a + n_m  # start of shared S_obs in combined theta
+            s_lat_offset = shared_count + g * n_s_lat
+            s_shared_count = 0
+            s_lat_count = 0
+            for s_idx, is_obs in enumerate(s_is_obs):
+                if is_obs:
+                    mapping[n_a + s_idx] = s_shared_idx + s_shared_count
+                    s_shared_count += 1
+                else:
+                    mapping[n_a + s_idx] = s_lat_offset + s_lat_count
+                    s_lat_count += 1
+            # M params: shared
+            if n_m > 0:
+                mapping[n_a + n_s:] = np.arange(n_a, n_a + n_m)
+            theta_mapping.append(mapping)
+
+        n_free_combined = shared_count + n_groups * n_s_lat
+
     else:
         raise ValueError(
-            f"invariance must be 'configural' or 'metric', got '{invariance}'"
+            f"invariance must be 'configural', 'metric', 'scalar', or 'strict', "
+            f"got '{invariance}'"
         )
 
     return MultiGroupSpec(
         group_names=group_names,
         group_specs=group_specs,
         group_sample_covs=group_sample_covs,
+        group_sample_means=group_sample_means,
         group_n_obs=group_n_obs,
         n_total=n_total,
         invariance=invariance,
@@ -166,11 +266,13 @@ def multigroup_ml_objective(
     f_total = 0.0
     for g in range(len(mg_spec.group_names)):
         theta_g = theta_combined[mg_spec.theta_mapping[g]]
+        sample_mean_g = mg_spec.group_sample_means[g] if mg_spec.group_specs[g].meanstructure else None
         f_g = ml_objective(
             theta_g,
             mg_spec.group_specs[g],
             mg_spec.group_sample_covs[g],
             mg_spec.group_n_obs[g],
+            sample_mean_g,
         )
         if f_g >= 1e9:
             return 1e10
@@ -185,11 +287,13 @@ def multigroup_ml_gradient(
     grad = np.zeros(mg_spec.n_free_combined)
     for g in range(len(mg_spec.group_names)):
         theta_g = theta_combined[mg_spec.theta_mapping[g]]
+        sample_mean_g = mg_spec.group_sample_means[g] if mg_spec.group_specs[g].meanstructure else None
         grad_g = ml_gradient(
             theta_g,
             mg_spec.group_specs[g],
             mg_spec.group_sample_covs[g],
             mg_spec.group_n_obs[g],
+            sample_mean_g,
         )
         weight = mg_spec.group_n_obs[g] / mg_spec.n_total
         np.add.at(grad, mg_spec.theta_mapping[g], weight * grad_g)

@@ -338,6 +338,28 @@ class ModelResults:
 
         return pd.DataFrame(rows)
 
+    def residuals(self, type: str = "raw") -> np.ndarray:
+        """Return residual covariance matrix (observed - implied).
+
+        Parameters
+        ----------
+        type : str
+            ``"raw"`` or ``"standardized"`` (normalized by observed SD).
+        """
+        A_opt, S_opt = self._spec.unpack(self._theta)
+        sigma = _model_implied_cov(A_opt, S_opt, self._spec.F)
+        if sigma is None:
+            return np.full_like(self._sample_cov, np.nan)
+
+        resid = self._sample_cov - sigma
+        if type == "standardized":
+            d = np.sqrt(np.diag(self._sample_cov))
+            d = np.where(d > 0, d, 1.0)
+            resid = resid / np.outer(d, d)
+        elif type != "raw":
+            raise ValueError(f"type must be 'raw' or 'standardized', got '{type}'")
+        return resid
+
     def r_squared(self) -> dict:
         """Compute R-squared for endogenous variables.
 

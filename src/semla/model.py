@@ -232,6 +232,10 @@ class Model:
         """Return estimates for user-defined parameters (:= operator)."""
         return self.results.defined_estimates()
 
+    def residuals(self, type: str = "raw") -> np.ndarray:
+        """Return residual covariance matrix (observed - implied)."""
+        return self.results.residuals(type=type)
+
     def r_squared(self) -> dict:
         """Return R-squared for endogenous variables."""
         return self.results.r_squared()
@@ -396,9 +400,18 @@ class MultiGroupModel:
         _validate_syntax(tokens)
 
         auto_cov_latent = kwargs.get("auto_cov_latent", True)
+        # Scalar and strict invariance require mean structure
+        meanstructure = kwargs.get("meanstructure", False)
+        if invariance in ("scalar", "strict"):
+            meanstructure = True
+
+        # Filter := tokens
+        model_tokens = [tok for tok in tokens if tok.op != ":="]
+
         self.mg_spec = build_multigroup_spec(
-            tokens, data, group, invariance=invariance,
+            model_tokens, data, group, invariance=invariance,
             auto_cov_latent=auto_cov_latent,
+            meanstructure=meanstructure,
         )
 
         est_result = estimate_multigroup(self.mg_spec)

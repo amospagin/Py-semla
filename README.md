@@ -262,7 +262,7 @@ df = HolzingerSwineford1939()
 - [x] DWLS estimator for ordinal data (polychoric correlations)
 - [x] Standardized solutions (std.all, std.lv)
 - [x] Modification indices
-- [x] Multi-group CFA (configural + metric invariance)
+- [x] Multi-group CFA (configural, metric, scalar, strict invariance)
 - [x] Chi-square difference test
 - [x] AIC / BIC / adjusted BIC information criteria
 - [x] R-squared for endogenous variables
@@ -274,6 +274,7 @@ df = HolzingerSwineford1939()
 - [x] Bootstrap confidence intervals
 - [x] Robust ML estimator (MLR) with Satorra-Bentler scaled chi-square
 - [x] FIML for missing data
+- [x] Residual diagnostics and Mardia's multivariate normality test
 - [x] Input validation and Heywood case warnings
 
 **Future:**

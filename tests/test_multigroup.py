@@ -138,7 +138,7 @@ class TestMultiGroupAPI:
 
     def test_invalid_invariance(self, hs_data):
         with pytest.raises(ValueError, match="invariance must be"):
-            cfa(HS_MODEL, data=hs_data, group="school", invariance="strict")
+            cfa(HS_MODEL, data=hs_data, group="school", invariance="partial")
 
     def test_summary_runs(self, fit_configural):
         output = fit_configural.summary()

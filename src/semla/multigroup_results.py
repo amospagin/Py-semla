@@ -43,16 +43,23 @@ class MultiGroupResults:
         self.chi_square = 0.0
         for g in range(n_groups):
             theta_g = self._theta[self._mg.theta_mapping[g]]
+            sample_mean_g = None
+            if self._mg.group_specs[g].meanstructure:
+                sample_mean_g = getattr(self._mg, 'group_sample_means', [None] * n_groups)[g]
             f_g = ml_objective(
                 theta_g,
                 self._mg.group_specs[g],
                 self._mg.group_sample_covs[g],
                 self._mg.group_n_obs[g],
+                sample_mean_g,
             )
             self.chi_square += (self._mg.group_n_obs[g] - 1) * f_g
 
         # Degrees of freedom
-        total_data_points = n_groups * (p * (p + 1) // 2)
+        data_per_group = p * (p + 1) // 2
+        if self._mg.group_specs[0].meanstructure:
+            data_per_group += p  # add mean information
+        total_data_points = n_groups * data_per_group
         self.df = total_data_points - self._mg.n_free_combined
 
         # P-value
