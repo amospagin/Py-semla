@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from scipy import stats
@@ -29,6 +31,9 @@ class ModelResults:
         # Compute fit indices
         self._compute_fit_indices()
 
+        # Check for Heywood cases
+        self._check_heywood()
+
     @property
     def converged(self) -> bool:
         return self._est.converged
@@ -40,6 +45,30 @@ class ModelResults:
     @property
     def n_free(self) -> int:
         return self._spec.n_free
+
+    # --- Post-estimation checks ---
+
+    def _check_heywood(self):
+        """Warn if any variance estimates are negative (Heywood cases)."""
+        A_opt, S_opt = self._spec.unpack(self._theta)
+        heywood_vars = []
+        for p in self._spec.params:
+            if p.op == "~~" and p.lhs == p.rhs and p.free:
+                i = self._spec._idx(p.lhs)
+                if S_opt[i, i] < 0:
+                    heywood_vars.append((p.lhs, S_opt[i, i]))
+
+        if heywood_vars:
+            var_list = ", ".join(
+                f"{name} ({val:.4f})" for name, val in heywood_vars
+            )
+            warnings.warn(
+                f"Negative variance estimate(s) detected (Heywood case): "
+                f"{var_list}. This may indicate model misspecification, "
+                f"too few observations, or empirical underidentification.",
+                RuntimeWarning,
+                stacklevel=4,
+            )
 
     # --- Fit indices ---
 

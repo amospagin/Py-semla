@@ -2,12 +2,92 @@
 
 from __future__ import annotations
 
+import warnings
+
+import numpy as np
 import pandas as pd
 
 from .estimation import estimate
 from .results import ModelResults
 from .specification import build_specification
 from .syntax import parse_syntax
+
+
+def _validate_data(tokens, data: pd.DataFrame) -> None:
+    """Validate that data is compatible with the model specification."""
+    data_cols = set(data.columns)
+
+    # Collect all observed variables referenced in the model
+    latent_vars = {tok.lhs for tok in tokens if tok.op == "=~"}
+    referenced_vars = set()
+    for tok in tokens:
+        for term in tok.rhs:
+            if term.var not in latent_vars:
+                referenced_vars.add(term.var)
+        if tok.op in ("~", "~~") and tok.lhs not in latent_vars:
+            referenced_vars.add(tok.lhs)
+
+    # Check for missing variables
+    missing = referenced_vars - data_cols
+    if missing:
+        missing_sorted = sorted(missing)
+        available = sorted(data_cols)
+        raise ValueError(
+            f"Variable(s) not found in data: {missing_sorted}. "
+            f"Available columns: {available}"
+        )
+
+    # Check for constant columns (zero variance)
+    for var in referenced_vars:
+        if var in data_cols and data[var].std() == 0:
+            raise ValueError(
+                f"Variable '{var}' has zero variance (constant column). "
+                f"Remove it from the model or check your data."
+            )
+
+    # Check minimum sample size
+    n_obs = len(data)
+    if n_obs < 10:
+        warnings.warn(
+            f"Very small sample size (n={n_obs}). Results may be unreliable.",
+            RuntimeWarning,
+            stacklevel=3,
+        )
+
+
+def _validate_syntax(tokens) -> None:
+    """Validate model syntax for common specification errors."""
+    # Check for duplicate indicators within a single factor
+    for tok in tokens:
+        if tok.op == "=~":
+            seen = set()
+            for term in tok.rhs:
+                if term.var in seen:
+                    raise ValueError(
+                        f"Duplicate indicator '{term.var}' in definition of "
+                        f"'{tok.lhs}'. Each indicator should appear only once "
+                        f"per factor."
+                    )
+                seen.add(term.var)
+
+    # Check for single-indicator factors
+    latent_indicators: dict[str, list[str]] = {}
+    for tok in tokens:
+        if tok.op == "=~":
+            lv = tok.lhs
+            if lv not in latent_indicators:
+                latent_indicators[lv] = []
+            latent_indicators[lv].extend(t.var for t in tok.rhs)
+
+    for lv, indicators in latent_indicators.items():
+        if len(indicators) < 2:
+            warnings.warn(
+                f"Latent variable '{lv}' has only {len(indicators)} "
+                f"indicator(s). At least 2 are needed for identification "
+                f"(3+ recommended).",
+                RuntimeWarning,
+                stacklevel=3,
+            )
 
 
 class Model:
@@ -37,6 +117,10 @@ class Model:
 
         # Parse
         self.tokens = parse_syntax(syntax)
+
+        # Validate
+        _validate_syntax(self.tokens)
+        _validate_data(self.tokens, data)
 
         # Build specification
         auto_cov_latent = kwargs.get("auto_cov_latent", True)
