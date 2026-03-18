@@ -120,6 +120,7 @@ semla uses the same operators as lavaan:
 | `~` | Regression | `dep ~ ind1 + ind2` |
 | `~~` | (Co)variance | `x1 ~~ x2` |
 | `~1` | Intercept | `y ~1` |
+| `:=` | Defined parameter | `indirect := a*b` |
 
 ### Modifiers
 
@@ -184,6 +185,23 @@ fit = sem(model, data=df)
 fit.summary()
 ```
 
+### Mediation Example
+
+```python
+from semla import sem
+
+model = """
+    M ~ a*X          # X -> M (path a)
+    Y ~ b*M + c*X    # M -> Y (path b), X -> Y (direct, path c)
+
+    indirect := a*b   # indirect effect
+    total := a*b + c  # total effect
+"""
+
+fit = sem(model, data=df)
+fit.defined_estimates()  # indirect effect with delta method SE
+```
+
 ## Fit Indices
 
 | Index | Description | Good Fit |
@@ -226,6 +244,7 @@ df = HolzingerSwineford1939()
 | `cfa(model, data, group="x")` | `cfa(model, data, group="x")` |
 | `cfa(model, data, ordered=TRUE)` | `cfa(model, data, estimator="DWLS")` |
 | `summary(fit, rsquare=TRUE)` | `fit.r_squared()` |
+| `parameterEstimates(fit)` (with `:=`) | `fit.defined_estimates()` |
 
 ## Dependencies
 
@@ -242,14 +261,12 @@ df = HolzingerSwineford1939()
 - [x] Modification indices
 - [x] Multi-group CFA (configural + metric invariance)
 - [x] Chi-square difference test
+- [x] AIC / BIC / adjusted BIC information criteria
+- [x] R-squared for endogenous variables
+- [x] Mean structure and intercepts (~1)
+- [x] Equality constraints via parameter labels (a*x1 + a*x2)
+- [x] Indirect effects and mediation (:= operator with delta method SEs)
 - [x] Input validation and Heywood case warnings
-
-**Next priorities:**
-- [ ] AIC / BIC information criteria ([#13](https://github.com/amospagin/semla/issues/13))
-- [ ] R-squared for endogenous variables ([#14](https://github.com/amospagin/semla/issues/14))
-- [ ] Mean structure and intercepts ([#8](https://github.com/amospagin/semla/issues/8))
-- [ ] Equality constraints and parameter labels ([#9](https://github.com/amospagin/semla/issues/9))
-- [ ] Indirect effects and mediation (:= operator) ([#10](https://github.com/amospagin/semla/issues/10))
 
 **Future:**
 - [ ] FIML for missing data ([#15](https://github.com/amospagin/semla/issues/15))

@@ -16,13 +16,14 @@ from .syntax import FormulaToken, parse_syntax
 class ModelResults:
     """Container for estimated model results and fit statistics."""
 
-    def __init__(self, est_result: EstimationResult):
+    def __init__(self, est_result: EstimationResult, defined_params=None):
         self._est = est_result
         self._spec = est_result.spec
         self._theta = est_result.theta
         self._sample_cov = est_result.sample_cov
         self._n_obs = est_result.n_obs
         self._estimator = getattr(est_result, "estimator_type", "ML")
+        self._defined_params = defined_params or []
 
         # Compute standard errors
         if self._estimator == "DWLS":
@@ -245,6 +246,76 @@ class ModelResults:
             "bic": self.bic,
             "abic": self.abic,
         }
+
+    def _get_label_maps(self) -> tuple[dict, dict]:
+        """Build label -> value and label -> SE mappings from estimates."""
+        label_values = {}
+        label_se = {}
+        for p in self._spec.params:
+            if p.free and p.label:
+                theta_idx = self._spec.param_theta_index(p)
+                if theta_idx is None:
+                    continue
+
+                # Get the estimated value
+                if p.op == "=~":
+                    A, S = self._spec.unpack(self._theta)
+                    i = self._spec._idx(p.rhs)
+                    j = self._spec._idx(p.lhs)
+                    label_values[p.label] = A[i, j]
+                elif p.op == "~":
+                    A, S = self._spec.unpack(self._theta)
+                    i = self._spec._idx(p.lhs)
+                    j = self._spec._idx(p.rhs)
+                    label_values[p.label] = A[i, j]
+                elif p.op == "~~":
+                    A, S = self._spec.unpack(self._theta)
+                    i = self._spec._idx(p.lhs)
+                    j = self._spec._idx(p.rhs)
+                    label_values[p.label] = S[i, j]
+
+                if theta_idx < len(self._se):
+                    label_se[p.label] = self._se[theta_idx]
+        return label_values, label_se
+
+    def defined_estimates(self) -> pd.DataFrame:
+        """Return estimates for user-defined parameters (:= operator).
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns: name, expression, est, se, z, pvalue.
+            Empty DataFrame if no defined parameters.
+        """
+        if not self._defined_params:
+            return pd.DataFrame(columns=["name", "expression", "est", "se", "z", "pvalue"])
+
+        from .defined import evaluate_defined_params, compute_defined_se
+
+        label_values, label_se = self._get_label_maps()
+
+        # Evaluate expressions
+        results = evaluate_defined_params(self._defined_params, label_values)
+
+        # Compute SEs via delta method
+        ses = compute_defined_se(self._defined_params, label_values, label_se)
+
+        rows = []
+        for i, res in enumerate(results):
+            se = ses[i]
+            est = res["est"]
+            z = est / se if se > 0 and not np.isnan(se) else np.nan
+            pval = 2 * (1 - stats.norm.cdf(abs(z))) if not np.isnan(z) else np.nan
+            rows.append({
+                "name": res["name"],
+                "expression": res["expression"],
+                "est": est,
+                "se": se,
+                "z": z,
+                "pvalue": pval,
+            })
+
+        return pd.DataFrame(rows)
 
     def r_squared(self) -> dict:
         """Compute R-squared for endogenous variables.
@@ -624,6 +695,19 @@ class ModelResults:
                     f"      {row['rhs']:<15s} {row['est']:>8.3f}  {se_str:>8s}  {z_str:>8s}  {p_str:>8s}{free_marker}"
                 )
 
+            lines.append("")
+
+        # Defined parameters
+        defined_df = self.defined_estimates()
+        if len(defined_df) > 0:
+            lines.append("  Defined Parameters:")
+            for _, row in defined_df.iterrows():
+                se_str = f"{row['se']:.3f}" if not np.isnan(row["se"]) else ""
+                z_str = f"{row['z']:.3f}" if not np.isnan(row["z"]) else ""
+                p_str = f"{row['pvalue']:.3f}" if not np.isnan(row["pvalue"]) else ""
+                lines.append(
+                    f"    {row['name']:<17s} {row['est']:>8.3f}  {se_str:>8s}  {z_str:>8s}  {p_str:>8s}"
+                )
             lines.append("")
 
         lines.append("=" * 60)

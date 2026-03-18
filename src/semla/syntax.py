@@ -37,9 +37,20 @@ class FormulaToken:
     rhs: list[RHSTerm] = field(default_factory=list)
 
 
+@dataclass
+class DefinedParameter:
+    """A user-defined parameter: name := expression.
+
+    The expression is a string like "a*b" that references labeled parameters.
+    """
+
+    name: str
+    expression: str
+
+
 # Operators ordered longest-first so =~ matches before ~
-_OPERATORS = ["=~", "~~", "~1", "~"]
-_OP_PATTERN = re.compile(r"(=~|~~|~1|~)")
+_OPERATORS = ["=~", "~~", "~1", "~", ":="]
+_OP_PATTERN = re.compile(r"(:=|=~|~~|~1|~)")
 
 # Modifier pattern: optional "number*" or "label*" prefix on a variable
 _MODIFIER_RE = re.compile(
@@ -129,7 +140,7 @@ def parse_syntax(model: str) -> list[FormulaToken]:
         if not m:
             raise SyntaxError(
                 f"No valid operator found in line: '{raw_line.strip()}'. "
-                f"Expected one of: =~ ~ ~~ ~1"
+                f"Expected one of: =~ ~ ~~ ~1 :="
             )
 
         op = m.group(1)
@@ -140,6 +151,15 @@ def parse_syntax(model: str) -> list[FormulaToken]:
             raise SyntaxError(
                 f"Missing left-hand side in: '{raw_line.strip()}'"
             )
+
+        # Handle := (defined parameter): store expression as-is
+        if op == ":=":
+            if not rhs_str:
+                raise SyntaxError(
+                    f"Missing expression in: '{raw_line.strip()}'"
+                )
+            tokens.append(FormulaToken(lhs=lhs, op=":=", rhs=[RHSTerm(var=rhs_str)]))
+            continue
 
         # Handle ~1 (intercept): no RHS needed beyond the "1"
         if op == "~1":

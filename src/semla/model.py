@@ -21,6 +21,8 @@ def _validate_data(tokens, data: pd.DataFrame) -> None:
     latent_vars = {tok.lhs for tok in tokens if tok.op == "=~"}
     referenced_vars = set()
     for tok in tokens:
+        if tok.op == ":=":
+            continue  # defined params reference labels, not data variables
         for term in tok.rhs:
             if term.var not in latent_vars:
                 referenced_vars.add(term.var)
@@ -129,8 +131,11 @@ class Model:
         if any(tok.op == "~1" for tok in self.tokens):
             meanstructure = True
 
+        # Filter out := tokens (defined params, not model specification)
+        model_tokens = [tok for tok in self.tokens if tok.op != ":="]
+
         self.spec = build_specification(
-            self.tokens,
+            model_tokens,
             data.columns.tolist(),
             auto_cov_latent=auto_cov_latent,
             meanstructure=meanstructure,
@@ -156,7 +161,10 @@ class Model:
             )
 
         # Build results
-        self.results = ModelResults(est_result)
+        # Extract defined parameters (:=) from tokens
+        from .defined import extract_defined_params
+        self._defined_params = extract_defined_params(self.tokens)
+        self.results = ModelResults(est_result, defined_params=self._defined_params)
 
     def summary(self) -> str:
         """Print and return a lavaan-style summary."""
@@ -181,6 +189,10 @@ class Model:
             Sort by MI descending.
         """
         return self.results.modindices(min_mi=min_mi, sort=sort)
+
+    def defined_estimates(self) -> pd.DataFrame:
+        """Return estimates for user-defined parameters (:= operator)."""
+        return self.results.defined_estimates()
 
     def r_squared(self) -> dict:
         """Return R-squared for endogenous variables."""
