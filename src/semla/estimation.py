@@ -32,6 +32,7 @@ class EstimationResult:
     n_obs: int
     spec: ModelSpecification
     sample_mean: np.ndarray = None
+    raw_data: np.ndarray = None  # centered raw data (for MLR Gamma)
 
 
 def _model_implied_cov(
@@ -306,6 +307,9 @@ def estimate(
             stacklevel=2,
         )
 
+    # Center data for potential MLR Gamma computation
+    centered_data = obs_data - obs_data.mean(axis=0)
+
     return EstimationResult(
         converged=result.success,
         iterations=result.nit,
@@ -316,4 +320,5 @@ def estimate(
         n_obs=n_obs,
         spec=spec,
         sample_mean=sample_mean,
+        raw_data=centered_data,
     )

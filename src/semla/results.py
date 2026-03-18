@@ -22,7 +22,8 @@ class ModelResults:
         self._theta = est_result.theta
         self._sample_cov = est_result.sample_cov
         self._n_obs = est_result.n_obs
-        self._estimator = getattr(est_result, "estimator_type", "ML")
+        self._estimator = getattr(est_result, "_estimator_type",
+                                   getattr(est_result, "estimator_type", "ML"))
         self._defined_params = defined_params or []
 
         # Compute standard errors
@@ -34,6 +35,12 @@ class ModelResults:
                 est_result.weight_diagonal,
                 est_result.gamma_diagonal,
                 self._n_obs,
+            )
+        elif self._estimator == "MLR":
+            from .robust import compute_gamma, compute_robust_se
+            self._gamma = compute_gamma(est_result.raw_data, self._sample_cov)
+            self._se = compute_robust_se(
+                self._theta, self._spec, self._sample_cov, self._n_obs, self._gamma,
             )
         else:
             self._se = _compute_se(
@@ -100,6 +107,12 @@ class ModelResults:
             self.chi_square, self._scaling_factor = _scaled_chi_square(
                 self._theta, self._spec, self._est.polychoric_cov,
                 self._est.gamma_diagonal, n, self.df,
+            )
+        elif self._estimator == "MLR":
+            from .robust import satorra_bentler_chi_square
+            self.chi_square, self._scaling_factor = satorra_bentler_chi_square(
+                self.fmin, n, self.df, self._theta, self._spec,
+                self._sample_cov, self._gamma,
             )
         else:
             self.chi_square = (n - 1) * self.fmin

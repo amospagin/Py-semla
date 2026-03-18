@@ -150,14 +150,16 @@ class Model:
 
         # Estimate
         estimator = kwargs.get("estimator", "ML").upper()
-        if estimator == "ML":
+        if estimator in ("ML", "MLR"):
             est_result = estimate(self.spec, data)
+            if estimator == "MLR":
+                est_result._estimator_type = "MLR"
         elif estimator == "DWLS":
             from .dwls import estimate_dwls
             est_result = estimate_dwls(self.spec, data)
         else:
             raise ValueError(
-                f"Unknown estimator '{estimator}'. Use 'ML' or 'DWLS'."
+                f"Unknown estimator '{estimator}'. Use 'ML', 'MLR', or 'DWLS'."
             )
 
         # Build results
