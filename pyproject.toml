@@ -27,6 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+bayes = ["numpyro>=0.13", "jax>=0.4"]
 dev = ["pytest>=7.0", "pytest-cov"]
 
 [tool.hatch.build.targets.wheel]
