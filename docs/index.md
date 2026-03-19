@@ -1,11 +1,11 @@
 # semla
 
-**Structural Equation Modeling with lavaan-style syntax for Python.**
+**Latent variable modeling and SEM in Python, with lavaan syntax.**
 
 !!! note "Early Development"
     semla is in early development (v0.1.0). The API may change, and results should be validated against established tools like lavaan before use in published research.
 
-semla brings the familiar [lavaan](https://lavaan.ugent.be/) model syntax from R to Python. If you know lavaan, you already know semla.
+semla is a Python package for structural equation modeling, confirmatory factor analysis, latent growth curves, IRT, and other latent variable models. It uses [lavaan](https://lavaan.ugent.be/)-style syntax for model specification, so if you know lavaan, you already know the syntax.
 
 ## Quick Example
 
@@ -27,15 +27,17 @@ fit.summary()
 
 ## Features
 
-- **lavaan syntax** — same `=~`, `~`, `~~` operators you already know
-- **Five estimators** — ML, MLR (robust), DWLS (ordinal), FIML (missing data), Bayesian MCMC
-- **Bayesian estimation** — NumPyro NUTS sampler with adaptive priors, adaptive convergence, WAIC, and PSIS-LOO
-- **GPU-accelerated** — Bayesian estimation runs on NVIDIA GPUs via JAX for large models and datasets
-- **IRT models** — 1PL (Rasch), 2PL, and Graded Response Model with ICC, information functions, and ability estimation
-- **Multi-group analysis** — configural, metric, scalar, and strict invariance with chi-square difference testing
-- **Fit indices** — chi-square, CFI, TLI, RMSEA (with CI), SRMR, AIC, BIC, WAIC, LOO
-- **Diagnostics** — modification indices, standardized solutions, residuals, Mardia's normality test, R-squared, reliability
-- **Validated against lavaan** — parameter estimates and standard errors match within 0.005
+- **lavaan syntax** -- same `=~`, `~`, `~~` operators you already know
+- **Five estimators** -- ML, MLR (robust), DWLS (ordinal), FIML (missing data), Bayesian MCMC
+- **Model types** -- CFA, SEM, mediation, growth curves (linear/nonlinear), higher-order factor models, cross-lagged panel models, IRT (1PL, 2PL, GRM)
+- **Bayesian estimation** -- NumPyro NUTS sampler with adaptive priors, adaptive convergence, WAIC, and PSIS-LOO
+- **Batch estimation** -- run many Bayesian models in parallel across CPU cores + GPU with `batch_bayes()`
+- **GPU-accelerated** -- Bayesian estimation runs on NVIDIA GPUs via JAX
+- **Multi-group analysis** -- configural, metric, scalar, and strict invariance with chi-square difference testing
+- **Model comparison** -- `compare_models()` for anova-style multi-model comparison tables
+- **Fit indices** -- chi-square, CFI, TLI, RMSEA (with CI), SRMR, AIC, BIC, WAIC, LOO
+- **Diagnostics** -- modification indices, standardized solutions, residuals, model-implied matrices (`fitted()`), parameter covariance matrix (`vcov()`), Mardia's normality test, R-squared, reliability
+- **Validated against lavaan** -- parameter estimates and standard errors match within 0.005
 
 ## Installation
 
@@ -55,7 +57,7 @@ pip install -e ".[bayes]"
 
 ## Why semla?
 
-There's no mature Python package that lets you specify SEM models with lavaan syntax and run both frequentist and Bayesian estimation from the same interface. If you're a researcher who uses lavaan or blavaan in R but works in Python, semla lets you stay in one language — with the added benefit of GPU-accelerated Bayesian inference via JAX for models that would take hours on CPU.
+Python lacks a mature package for specifying latent variable models with familiar lavaan syntax and running both frequentist and Bayesian estimation from the same interface. semla fills this gap -- with the added ability to run batches of Bayesian models in parallel across CPU cores and GPU.
 
 ## Guides
 

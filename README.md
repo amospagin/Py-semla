@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">semla</h1>
   <p align="center">
-    <strong>Structural Equation Modeling with lavaan-style syntax for Python</strong>
+    <strong>Latent variable modeling and SEM in Python, with lavaan syntax</strong>
   </p>
   <p align="center">
     <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.9%2B-blue.svg" alt="Python 3.9+"></a>
@@ -12,9 +12,9 @@
 
 ---
 
-**semla** brings the familiar [lavaan](https://lavaan.ugent.be/) model syntax from R to Python. If you know lavaan, you already know semla.
+**semla** is a Python package for structural equation modeling, confirmatory factor analysis, latent growth curves, IRT, and other latent variable models. It uses [lavaan](https://lavaan.ugent.be/)-style syntax for model specification, so if you know lavaan, you already know the syntax.
 
-Fit CFA, SEM, and IRT models with the same `=~`, `~`, and `~~` operators you're used to. Go frequentist with ML, MLR, DWLS, or FIML — or switch to full Bayesian MCMC estimation with a single argument. Run multi-group invariance testing, compute modification indices, bootstrap confidence intervals, and get WAIC/LOO model comparison — all from one package.
+Choose between frequentist estimation (ML, MLR, DWLS, FIML) and full Bayesian MCMC inference — from the same interface. Run batches of Bayesian models in parallel across CPU cores and GPU.
 
 ## Installation
 
@@ -54,13 +54,14 @@ fit.summary()
 
 | Category | What's available |
 |----------|-----------------|
+| **Model types** | CFA, SEM with regressions, mediation (`:=` indirect effects), growth curves (linear and nonlinear), higher-order factor models, cross-lagged panel models, IRT (1PL, 2PL, GRM) |
 | **Estimators** | ML, MLR (robust Satorra-Bentler), DWLS (ordinal/polychoric), FIML (missing data), Bayesian MCMC (NumPyro NUTS) |
-| **Model types** | CFA, SEM with regressions, mediation (`:=` indirect effects), IRT (1PL, 2PL, GRM) |
 | **Multi-group** | Configural, metric, scalar, and strict measurement invariance |
 | **Bayesian** | Adaptive priors, adaptive convergence, parallel chains, WAIC, PSIS-LOO, posterior draws |
+| **Batch estimation** | Run many Bayesian models in parallel across CPU cores + GPU with `batch_bayes()` |
 | **Diagnostics** | Fit indices (CFI, TLI, RMSEA, SRMR), modification indices, residuals, Mardia's normality test |
-| **Inference** | Standard errors, bootstrap CIs, chi-square difference test, R-squared, reliability (omega, alpha) |
-| **Scoring** | Factor score prediction (regression, Bartlett), IRT ability estimation, item/test information |
+| **Inference** | Standard errors, bootstrap CIs, chi-square difference test, model comparison table, R-squared, reliability (omega, alpha) |
+| **Post-estimation** | Factor scores (regression, Bartlett), standardized solutions, model-implied matrices (`fitted()`), parameter covariance matrix (`vcov()`) |
 
 ## Model Syntax
 
@@ -109,6 +110,24 @@ fit = sem("""
 fit.defined_estimates()  # indirect effect with delta method SE
 ```
 
+## Growth Curve Models
+
+```python
+from semla import growth
+
+# Linear growth over 4 time points
+fit = growth("""
+    i =~ 1*y1 + 1*y2 + 1*y3 + 1*y4
+    s =~ 0*y1 + 1*y2 + 2*y3 + 3*y4
+""", data=df)
+
+# Nonlinear growth — free the y3 time loading
+fit = growth("""
+    i =~ 1*y1 + 1*y2 + 1*y3 + 1*y4
+    s =~ 0*y1 + 1*y2 + NA*y3 + 3*y4
+""", data=df)
+```
+
 ## Bayesian Estimation
 
 Switch to full Bayesian inference with `estimator="bayes"`. Uses [NumPyro](https://num.pyro.ai/) NUTS sampler with data-adaptive priors.
@@ -139,7 +158,36 @@ fit.results.waic()           # WAIC model comparison
 fit.results.loo()            # LOO-CV via PSIS
 ```
 
-Features: data-adaptive priors (brms-style), adaptive convergence monitoring, positive loading constraints for sign identification, parallel chain execution on CPU, WAIC and PSIS-LOO.
+## Batch Bayesian Estimation
+
+Run many Bayesian models in parallel using `batch_bayes()`. Models are distributed across CPU cores and (optionally) a GPU using a complexity-based scheduler.
+
+```python
+from semla import batch_bayes
+
+models = {
+    "2factor": "f1 =~ x1+x2+x3\nf2 =~ x4+x5+x6",
+    "1factor": "f1 =~ x1+x2+x3+x4+x5+x6",
+    "3factor": "f1 =~ x1+x2\nf2 =~ x3+x4\nf3 =~ x5+x6",
+}
+
+results = batch_bayes(models, data=df, cpu_cores=6, gpu="auto",
+                      warmup=1000, draws=2000)
+
+results.summary_table()      # status, backend, WAIC for all models
+results.compare()            # rank models by WAIC
+results["2factor"].summary   # individual model summary
+
+# Per-model priors for sensitivity analysis
+results = batch_bayes(models, data=df, priors={
+    "2factor": "weak",
+    "1factor": {"loadings": Normal(0, 1)},
+})
+
+# Explicit GPU assignment
+results = batch_bayes(models, data=df,
+                      gpu_models=["2factor", "1factor"])
+```
 
 ## IRT Models
 
@@ -171,21 +219,19 @@ fit.abilities()               # person ability (theta) estimates
 Test measurement invariance across groups with increasing constraint levels.
 
 ```python
-from semla import cfa, chi_square_diff_test
+from semla import cfa, chi_square_diff_test, compare_models
 
-# Configural — same structure, all parameters free
+# Fit invariance hierarchy
 fit_config = cfa(model, data=df, group="gender", invariance="configural")
-
-# Metric — loadings constrained equal across groups
 fit_metric = cfa(model, data=df, group="gender", invariance="metric")
-
-# Scalar — loadings + intercepts equal (requires mean structure)
 fit_scalar = cfa(model, data=df, group="gender", invariance="scalar")
-
-# Strict — loadings + intercepts + residual variances equal
 fit_strict = cfa(model, data=df, group="gender", invariance="strict")
 
-# Compare nested models
+# Compare all models at once
+compare_models(configural=fit_config, metric=fit_metric,
+               scalar=fit_scalar, strict=fit_strict)
+
+# Or pairwise
 chi_square_diff_test(fit_metric, fit_config)
 ```
 
@@ -211,6 +257,12 @@ fit.estimates()
 
 # Standardized solution
 fit.standardized_estimates(type="std.all")
+
+# Model-implied covariance and mean matrices
+fit.fitted()
+
+# Parameter variance-covariance matrix
+fit.vcov()
 
 # Modification indices
 fit.modindices(min_mi=5.0)
@@ -254,11 +306,15 @@ mardia_test(df[["x1", "x2", "x3"]].values)
 |------------------------------|----------------|
 | `library(lavaan)` | `from semla import cfa, sem` |
 | `fit <- cfa(model, data=df)` | `fit = cfa(model, data=df)` |
+| `fit <- growth(model, data=df)` | `fit = growth(model, data=df)` |
 | `summary(fit, fit.measures=TRUE)` | `fit.summary()` |
 | `fitMeasures(fit)` | `fit.fit_indices()` |
 | `parameterEstimates(fit)` | `fit.estimates()` |
+| `fitted(fit)` | `fit.fitted()` |
+| `vcov(fit)` | `fit.vcov()` |
 | `standardizedSolution(fit)` | `fit.standardized_estimates()` |
 | `modindices(fit)` | `fit.modindices()` |
+| `anova(fit1, fit2, fit3)` | `compare_models(m1=fit1, m2=fit2, m3=fit3)` |
 | `cfa(model, data, group="x")` | `cfa(model, data, group="x")` |
 | `cfa(model, data, ordered=TRUE)` | `cfa(model, data, estimator="DWLS")` |
 | `blavaan::bcfa(model, data)` | `cfa(model, data, estimator="bayes")` |
