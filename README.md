@@ -18,7 +18,7 @@
 
 Choose between frequentist estimation (ML, MLR, DWLS, FIML) and full Bayesian MCMC inference — from the same interface. Run batches of Bayesian models in parallel across CPU cores and GPU.
 
-## Installation
+## 📦 Installation
 
 ```bash
 pip install semla              # core (ML, MLR, DWLS, FIML, IRT, multi-group)
@@ -34,7 +34,7 @@ cd semla
 pip install -e ".[bayes]"
 ```
 
-## Quick Start
+## 🚀 Quick Start
 
 ```python
 from semla import cfa
@@ -52,7 +52,7 @@ fit = cfa(model, data=df)
 fit.summary()
 ```
 
-## Features at a Glance
+## ✨ Features at a Glance
 
 | Category | What's available |
 |----------|-----------------|
@@ -66,7 +66,7 @@ fit.summary()
 | **Inference** | Standard errors, bootstrap CIs, chi-square difference test, model comparison table, R-squared, reliability (omega, alpha) |
 | **Post-estimation** | Factor scores (regression, Bartlett), standardized solutions, model-implied matrices (`fitted()`), parameter covariance matrix (`vcov()`) |
 
-## Model Syntax
+## 📝 Model Syntax
 
 semla uses the same operators as lavaan:
 
@@ -88,7 +88,7 @@ semla uses the same operators as lavaan:
 "f1 =~ NA*x1 + x2 + x3"       # free a normally-fixed parameter
 ```
 
-## CFA and SEM
+## 🔬 CFA and SEM
 
 ```python
 from semla import cfa, sem
@@ -115,7 +115,7 @@ fit = sem("""
 fit.defined_estimates()  # indirect effect with delta method SE
 ```
 
-## Growth Curve Models
+## 📈 Growth Curve Models
 
 ```python
 from semla import growth
@@ -133,7 +133,7 @@ fit = growth("""
 """, data=df)
 ```
 
-## Bayesian Estimation
+## 🎲 Bayesian Estimation
 
 Switch to full Bayesian inference with `estimator="bayes"`. Uses [NumPyro](https://num.pyro.ai/) NUTS sampler with data-adaptive priors.
 
@@ -163,7 +163,7 @@ fit.results.waic()           # WAIC model comparison
 fit.results.loo()            # LOO-CV via PSIS
 ```
 
-## Batch Bayesian Estimation
+## ⚡ Batch Bayesian Estimation
 
 Run many Bayesian models in parallel using `batch_bayes()`. Models are distributed across CPU cores and (optionally) a GPU using a complexity-based scheduler.
 
@@ -194,7 +194,7 @@ results = batch_bayes(models, data=df,
                       gpu_models=["2factor", "1factor"])
 ```
 
-## IRT Models
+## 📊 IRT Models
 
 Fit Item Response Theory models using CFA parameterization. Supports binary (1PL, 2PL) and ordinal (GRM) items.
 
@@ -219,7 +219,7 @@ fit.abilities()               # person ability (theta) estimates
 | `2PL` | Two-parameter — estimate both discrimination and difficulty |
 | `GRM` | Graded Response Model — for ordinal (Likert-scale) items |
 
-## Multi-Group Analysis
+## 👥 Multi-Group Analysis
 
 Test measurement invariance across groups in one call:
 
@@ -243,7 +243,7 @@ fit_metric = cfa(model, data=df, group="gender", invariance="metric")
 chi_square_diff_test(fit_metric, fit_config)
 ```
 
-## Estimators
+## 🔧 Estimators
 
 | Estimator | Usage | When to use |
 |-----------|-------|-------------|
@@ -253,7 +253,7 @@ chi_square_diff_test(fit_metric, fit_config)
 | `FIML` | `cfa(model, data=df, missing="fiml")` | Data with missing values |
 | `Bayes` | `cfa(model, data=df, estimator="bayes")` | Bayesian inference, small samples, complex models |
 
-## Working with Results
+## 📋 Working with Results
 
 ```python
 # Fit indices
@@ -295,7 +295,7 @@ from semla import mardia_test
 mardia_test(df[["x1", "x2", "x3"]].values)
 ```
 
-## Fit Indices
+## 📏 Fit Indices
 
 | Index | Description | Good Fit |
 |-------|-------------|----------|
@@ -308,7 +308,7 @@ mardia_test(df[["x1", "x2", "x3"]].values)
 | WAIC | Widely Applicable IC (Bayesian) | Lower is better |
 | LOO | Leave-One-Out CV (Bayesian) | Lower is better |
 
-## Validation
+## ✅ Validation
 
 semla is validated against [lavaan](https://lavaan.ugent.be/) 0.6-20. Parameter estimates, standard errors, and fit indices are compared across a range of model types:
 
@@ -322,7 +322,7 @@ semla is validated against [lavaan](https://lavaan.ugent.be/) 0.6-20. Parameter 
 
 Estimates and SEs typically match lavaan within 0.01, and fit indices within 0.005. The full validation suite (200+ tests) runs against hardcoded lavaan reference values. See `tests/test_validate_*.py` for details.
 
-## Coming from R?
+## 🔄 Coming from R?
 
 | lavaan / blavaan / mirt (R) | semla (Python) |
 |------------------------------|----------------|
@@ -346,7 +346,7 @@ Estimates and SEs typically match lavaan within 0.01, and fit indices within 0.0
 | `reliability(fit)` | `fit.reliability()` |
 | `bootstrapLavaan(fit)` | `fit.bootstrap(nboot=1000)` |
 
-## Built-in Datasets
+## 📂 Built-in Datasets
 
 ```python
 from semla.datasets import HolzingerSwineford1939
@@ -356,7 +356,7 @@ df = HolzingerSwineford1939()  # 301 rows x 15 columns
 
 **Holzinger & Swineford (1939):** Mental ability test scores for 301 seventh- and eighth-grade students. Nine tests loading on three factors: Visual (x1-x3), Textual (x4-x6), Speed (x7-x9).
 
-## Dependencies
+## 🧩 Dependencies
 
 **Core:**
 - [NumPy](https://numpy.org/) >= 1.22
@@ -367,6 +367,6 @@ df = HolzingerSwineford1939()  # 301 rows x 15 columns
 - [NumPyro](https://num.pyro.ai/) >= 0.13
 - [JAX](https://jax.readthedocs.io/) >= 0.4
 
-## License
+## 📄 License
 
 [MIT](LICENSE)
