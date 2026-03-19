@@ -56,3 +56,16 @@ pip install -e ".[bayes]"
 ## Why semla?
 
 There's no mature Python package that lets you specify SEM models with lavaan syntax and run both frequentist and Bayesian estimation from the same interface. If you're a researcher who uses lavaan or blavaan in R but works in Python, semla lets you stay in one language — with the added benefit of GPU-accelerated Bayesian inference via JAX for models that would take hours on CPU.
+
+## Guides
+
+- [Getting Started](getting-started.md) -- installation, first model, syntax overview
+- [CFA](guide/cfa.md) -- confirmatory factor analysis
+- [SEM](guide/sem.md) -- structural models, mediation, indirect effects
+- [Bayesian Estimation](guide/bayesian.md) -- MCMC, priors, GPU, WAIC/LOO
+- [IRT Models](guide/irt.md) -- 1PL, 2PL, Graded Response Model
+- [Multi-Group Analysis](guide/multigroup.md) -- measurement invariance
+- [Ordinal Data (DWLS)](guide/dwls.md) -- polychoric correlations
+- [Coming from R?](lavaan-migration.md) -- lavaan/blavaan/mirt mapping
+- [API Reference](api.md) -- full function and class documentation
+- [Roadmap](roadmap.md) -- what's shipped and what's next

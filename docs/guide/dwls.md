@@ -1,10 +1,10 @@
 # Ordinal Data (DWLS)
 
-When your observed variables are ordinal (e.g., Likert scales with 2–7 categories), standard ML estimation assumes continuous data and can produce biased estimates. DWLS uses **polychoric correlations** instead.
+When your observed variables are ordinal (e.g., Likert scales with 2-7 categories), standard ML estimation assumes continuous data and can produce biased estimates. DWLS uses **polychoric correlations** instead.
 
 ## When to Use DWLS
 
-- Likert-scale items (e.g., 1–5 agreement scales)
+- Likert-scale items (e.g., 1-5 agreement scales)
 - Binary items (yes/no)
 - Any ordinal categorical data
 
@@ -26,10 +26,10 @@ fit.summary()
 
 ## What Happens Under the Hood
 
-1. **Polychoric correlations** are computed for all pairs of ordinal variables — these estimate the correlation between the latent continuous variables assumed to underlie the ordinal responses
-2. The model is fitted via **ML on the polychoric correlation matrix**
-3. **Robust standard errors** are computed using a sandwich estimator that accounts for the uncertainty in the polychoric correlations
-4. The **chi-square test** is scaled (Satorra-Bentler type) to correct for the non-normality of ordinal data
+1. **Polychoric correlations** are computed for all pairs of ordinal variables -- these estimate the correlation between the latent continuous variables assumed to underlie the ordinal responses
+2. The model is fitted via **diagonally weighted least squares** on the polychoric correlation matrix
+3. **Robust standard errors** are computed using a sandwich estimator
+4. The **chi-square test** is scaled (Satorra-Bentler type) to correct for non-normality
 
 ## Example with Ordinal Data
 
@@ -53,15 +53,4 @@ fit = cfa(model, data=df, estimator="DWLS")
 fit.summary()
 ```
 
-## Polychoric Correlations
-
-You can also compute polychoric correlations directly:
-
-```python
-from semla.polychoric import polychoric_correlation_matrix
-
-R, avar, thresholds = polychoric_correlation_matrix(data.values)
-```
-
-!!! note
-    Variables with more than 10 unique values are treated as continuous (Pearson correlation is used instead of polychoric). This means DWLS works fine even if your dataset mixes ordinal and continuous variables.
+Variables with more than 10 unique values are treated as continuous (Pearson correlation is used instead of polychoric). This means DWLS works fine even if your dataset mixes ordinal and continuous variables.

@@ -3,7 +3,9 @@
 ## Installation
 
 ```bash
-pip install semla
+pip install semla              # core (ML, MLR, DWLS, FIML, IRT, multi-group)
+pip install semla[bayes]       # + Bayesian estimation (CPU)
+pip install semla[bayes-cuda]  # + Bayesian estimation (NVIDIA GPU)
 ```
 
 ## Your First CFA Model
@@ -14,18 +16,16 @@ A Confirmatory Factor Analysis tests whether observed variables load on hypothes
 from semla import cfa
 from semla.datasets import HolzingerSwineford1939
 
-# Load the classic dataset
 df = HolzingerSwineford1939()
 
-# Specify a 3-factor model
 model = """
     visual  =~ x1 + x2 + x3
     textual =~ x4 + x5 + x6
     speed   =~ x7 + x8 + x9
 """
 
-# Fit the model
 fit = cfa(model, data=df)
+fit.summary()
 ```
 
 ## Examining Results
@@ -36,7 +36,7 @@ fit = cfa(model, data=df)
 fit.summary()
 ```
 
-This prints a lavaan-style summary with fit indices and parameter estimates.
+Prints a lavaan-style summary with fit indices, parameter estimates, standard errors, and p-values.
 
 ### Fit Indices
 
@@ -55,26 +55,32 @@ fit.fit_indices()
 ### Parameter Estimates
 
 ```python
-# Unstandardized
-fit.estimates()
-
-# Standardized (std.all)
-fit.standardized_estimates()
-
-# Just the loadings
-est = fit.estimates()
-est[est["op"] == "=~"]
+fit.estimates()                          # unstandardized
+fit.standardized_estimates()             # fully standardized (std.all)
+fit.standardized_estimates("std.lv")     # standardized by LV SD only
 ```
 
-### Modification Indices
-
-Find where the model could be improved:
+### More Results
 
 ```python
-fit.modindices(min_mi=5.0)
+fit.modindices(min_mi=5.0)               # modification indices
+fit.r_squared()                          # R-squared for endogenous variables
+fit.reliability()                        # McDonald's omega and Cronbach's alpha
+fit.residuals(type="standardized")       # residual covariance matrix
+fit.predict()                            # factor scores (regression method)
+fit.bootstrap(nboot=1000)                # bootstrap confidence intervals
+fit.defined_estimates()                  # indirect effects (:= operator)
 ```
 
-Large MI values suggest paths that, if freed, would significantly improve fit.
+## Choosing an Estimator
+
+```python
+fit = cfa(model, data=df)                          # ML (default)
+fit = cfa(model, data=df, estimator="MLR")         # robust ML (non-normal data)
+fit = cfa(model, data=df, estimator="DWLS")        # ordinal/categorical data
+fit = cfa(model, data=df, missing="fiml")          # missing data (FIML)
+fit = cfa(model, data=df, estimator="bayes")       # Bayesian MCMC
+```
 
 ## Model Syntax
 
@@ -86,32 +92,21 @@ semla uses the same operators as lavaan:
 | `~` | Regression | `y ~ x1 + x2` |
 | `~~` | (Co)variance | `x1 ~~ x2` |
 | `~1` | Intercept | `y ~1` |
+| `:=` | Defined parameter | `indirect := a*b` |
 
 ### Modifiers
 
 ```python
-# Fix a loading
-"f1 =~ 1*x1 + x2 + x3"
-
-# Free the first loading (normally fixed to 1)
-"f1 =~ NA*x1 + x2 + x3"
-```
-
-### Multiple lines or semicolons
-
-```python
-# Both work
-model = """
-    f1 =~ x1 + x2 + x3
-    f2 =~ x4 + x5 + x6
-"""
-
-model = "f1 =~ x1 + x2 + x3; f2 =~ x4 + x5 + x6"
+"f1 =~ 1*x1 + x2 + x3"        # fix a loading to a specific value
+"f1 =~ NA*x1 + x2 + x3"       # free the first loading
+"f1 =~ x1 + a*x2 + a*x3"      # equality constraint (same label)
 ```
 
 ## Next Steps
 
-- [CFA Guide](guide/cfa.md) — deeper dive into CFA
-- [SEM Guide](guide/sem.md) — structural models with regressions
-- [Multi-Group Analysis](guide/multigroup.md) — measurement invariance
-- [Ordinal Data](guide/dwls.md) — DWLS for Likert-scale data
+- [CFA Guide](guide/cfa.md) -- factor analysis in depth
+- [SEM Guide](guide/sem.md) -- structural models and mediation
+- [Bayesian Estimation](guide/bayesian.md) -- MCMC with NumPyro
+- [IRT Models](guide/irt.md) -- item response theory
+- [Multi-Group Analysis](guide/multigroup.md) -- measurement invariance
+- [Ordinal Data](guide/dwls.md) -- DWLS for Likert-scale data

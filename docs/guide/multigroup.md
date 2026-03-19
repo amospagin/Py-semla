@@ -2,6 +2,15 @@
 
 Multi-group CFA tests whether a measurement model holds across different groups (e.g., gender, schools, countries). This is called **measurement invariance** testing.
 
+## Invariance Levels
+
+| Level | What's Equal | Tests |
+|-------|-------------|-------|
+| Configural | Model structure only | Same factors in all groups |
+| Metric | + Factor loadings | Factors have same meaning |
+| Scalar | + Intercepts | Group means are comparable |
+| Strict | + Residual variances | Same measurement precision |
+
 ## Configural Invariance
 
 Same model structure across groups, all parameters free to vary:
@@ -22,8 +31,6 @@ fit_config = cfa(model, data=df, group="school")
 fit_config.summary()
 ```
 
-This tests: *Does the same factor structure hold in both schools?*
-
 ## Metric Invariance
 
 Factor loadings constrained equal across groups:
@@ -32,11 +39,25 @@ Factor loadings constrained equal across groups:
 fit_metric = cfa(model, data=df, group="school", invariance="metric")
 ```
 
-This tests: *Do the factors mean the same thing in both groups?* Equal loadings imply the same unit of measurement.
+## Scalar Invariance
+
+Loadings and intercepts constrained equal (requires mean structure):
+
+```python
+fit_scalar = cfa(model, data=df, group="school", invariance="scalar")
+```
+
+## Strict Invariance
+
+Loadings, intercepts, and residual variances constrained equal:
+
+```python
+fit_strict = cfa(model, data=df, group="school", invariance="strict")
+```
 
 ## Testing Invariance
 
-Compare models with the chi-square difference test:
+Compare nested models with the chi-square difference test:
 
 ```python
 from semla import chi_square_diff_test
@@ -46,38 +67,26 @@ print(diff)
 # {'chi_sq_diff': 8.14, 'df_diff': 6, 'p_value': 0.228}
 ```
 
-If **p > .05**, the more constrained model (metric) fits equally well, supporting that level of invariance.
+If **p > .05**, the more constrained model fits equally well, supporting that level of invariance.
 
-## Invariance Levels
+## Sequential Testing Workflow
 
-| Level | What's Equal | Tests |
-|-------|-------------|-------|
-| Configural | Model structure only | Same factors in all groups |
-| Metric | + Factor loadings | Factors have same meaning |
-| Scalar | + Intercepts | Group means are comparable |
-| Strict | + Residual variances | Same measurement precision |
+```python
+fit_config = cfa(model, data=df, group="school", invariance="configural")
+fit_metric = cfa(model, data=df, group="school", invariance="metric")
+fit_scalar = cfa(model, data=df, group="school", invariance="scalar")
+fit_strict = cfa(model, data=df, group="school", invariance="strict")
 
-!!! note
-    semla currently supports configural and metric invariance. Scalar invariance requires mean structure (intercepts), which is planned for a future release.
+# Test each step
+print("Metric vs Configural:", chi_square_diff_test(fit_metric, fit_config))
+print("Scalar vs Metric:",    chi_square_diff_test(fit_scalar, fit_metric))
+print("Strict vs Scalar:",    chi_square_diff_test(fit_strict, fit_scalar))
+```
 
 ## Per-Group Estimates
 
 ```python
 est = fit_config.estimates()
-
-# Filter by group
 est[est["group"] == "Pasteur"]
 est[est["group"] == "Grant-White"]
-```
-
-## Verifying Equal Loadings
-
-Under metric invariance, loadings should be identical across groups:
-
-```python
-est = fit_metric.estimates()
-loadings = est[(est["op"] == "=~") & (est["free"])]
-for ind in loadings["rhs"].unique():
-    vals = loadings[loadings["rhs"] == ind]
-    print(f"{ind}: {vals['est'].values}")  # should be identical
 ```

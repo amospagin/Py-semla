@@ -31,16 +31,29 @@ fit.summary()
 
 If your model has regressions between latent variables (`~`), use `sem()`. If it's purely a factor model, use `cfa()`.
 
-## Observed Variable Regressions
+## Mediation Analysis
 
-You can also regress observed variables:
+Test indirect effects using the `:=` operator with labeled paths:
 
 ```python
+from semla import sem
+
 model = """
-    f1 =~ x1 + x2 + x3
-    y ~ f1 + age + gender
+    M ~ a*X          # X -> M (path a)
+    Y ~ b*M + c*X    # M -> Y (path b), X -> Y (direct, path c)
+
+    indirect := a*b   # indirect effect
+    total := a*b + c  # total effect
 """
+
 fit = sem(model, data=df)
+fit.defined_estimates()  # indirect effect with delta method SE
+```
+
+You can also use bootstrap confidence intervals for the indirect effect:
+
+```python
+fit.bootstrap(nboot=1000)
 ```
 
 ## Correlated Residuals
@@ -54,5 +67,48 @@ model = """
 """
 ```
 
-!!! note
-    Adding correlated residuals should be theoretically motivated, not just driven by modification indices.
+## Mean Structure
+
+Estimate intercepts for observed variables:
+
+```python
+fit = sem(model, data=df, meanstructure=True)
+```
+
+Or use the `~1` operator in syntax:
+
+```python
+model = """
+    f1 =~ x1 + x2 + x3
+    x1 ~1
+"""
+```
+
+## Equality Constraints
+
+Constrain parameters to be equal using labels:
+
+```python
+model = """
+    f1 =~ x1 + a*x2 + a*x3   # x2 and x3 loadings forced equal
+"""
+```
+
+## R-Squared and Factor Scores
+
+```python
+fit.r_squared()                          # variance explained per endogenous variable
+fit.predict(method="regression")         # Thurstone regression scores
+fit.predict(method="bartlett")           # Bartlett scores
+```
+
+## Bayesian SEM
+
+Structural models can also be estimated with Bayesian MCMC:
+
+```python
+fit = sem(model, data=df, estimator="bayes", chains=4, draws=2000)
+fit.results.estimates()     # posterior mean, CI, R-hat, ESS
+```
+
+See the [Bayesian Estimation](bayesian.md) guide for details.
