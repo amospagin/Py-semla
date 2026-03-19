@@ -3,7 +3,7 @@
 ## Shipped
 
 - [x] ML estimation with lavaan-validated results
-- [x] MLR estimator (robust Satorra-Bentler)
+- [x] MLR estimator (robust Satorra-Bentler / Yuan-Bentler-Mplus)
 - [x] DWLS estimator for ordinal data (polychoric correlations)
 - [x] FIML for missing data
 - [x] Bayesian MCMC estimation via NumPyro (NUTS sampler)
@@ -18,7 +18,7 @@
 - [x] Higher-order (second-order) factor models
 - [x] Cross-lagged panel models
 - [x] Standardized solutions (std.all, std.lv)
-- [x] Modification indices
+- [x] Modification indices (Schur complement score test)
 - [x] Chi-square difference test
 - [x] Multi-model comparison table (compare_models)
 - [x] AIC / BIC / adjusted BIC
@@ -36,23 +36,21 @@
 - [x] Positive loading constraints for sign identification
 - [x] Validated against lavaan 0.6-20
 
-## Known Issues
-
-- [ ] MLR robust SEs diverge from lavaan for some parameters ([#36](https://github.com/amospagin/semla/issues/36))
-- [ ] Modification indices inflated for residual covariances ([#37](https://github.com/amospagin/semla/issues/37))
-
 ## Future Directions
 
+- [ ] vmap-batched MCMC for same-structure models ([#55](https://github.com/amospagin/semla/issues/55))
+- [ ] Bayesian IRT estimation ([#48](https://github.com/amospagin/semla/issues/48))
+- [ ] Multilevel SEM for clustered data ([#49](https://github.com/amospagin/semla/issues/49))
+- [ ] Latent class analysis and mixture models ([#50](https://github.com/amospagin/semla/issues/50))
+- [ ] ESEM — exploratory SEM ([#51](https://github.com/amospagin/semla/issues/51))
+- [ ] Monte Carlo simulation / power analysis ([#52](https://github.com/amospagin/semla/issues/52))
+- [ ] Validate RI-CLPM ([#53](https://github.com/amospagin/semla/issues/53))
 - [ ] Path diagram visualization ([#38](https://github.com/amospagin/semla/issues/38))
 - [ ] Auto-add exogenous observed variable covariances in sem() ([#42](https://github.com/amospagin/semla/issues/42))
 - [ ] Nonlinear parameter constraints ([#45](https://github.com/amospagin/semla/issues/45))
 - [ ] Publication-ready table export ([#46](https://github.com/amospagin/semla/issues/46))
 - [ ] Complex survey weight support ([#47](https://github.com/amospagin/semla/issues/47))
-- [ ] Bayesian model comparison (Bayes factors)
-- [ ] Traceplots and posterior visualization
-- [ ] Multi-group Bayesian estimation
-- [ ] 3PL and multidimensional IRT models
-- [ ] Latent class / mixture models
-- [ ] Penalized likelihood (lasso/ridge SEM)
-- [ ] Simulation / power analysis utilities
+- [ ] Alignment method for approximate invariance ([#54](https://github.com/amospagin/semla/issues/54))
+- [ ] Improve DWLS implementation ([#22](https://github.com/amospagin/semla/issues/22))
+- [ ] Validate FIML on multiple missingness patterns ([#24](https://github.com/amospagin/semla/issues/24))
 - [ ] PyPI release
