@@ -28,17 +28,21 @@ fit.summary()
 ## Features
 
 - **lavaan syntax** — same `=~`, `~`, `~~` operators you already know
-- **ML and DWLS estimation** — maximum likelihood for continuous data, polychoric correlations for ordinal
-- **Fit indices** — chi-square, CFI, TLI, RMSEA (with CI), SRMR
-- **Standardized solutions** — fully standardized (std.all) and LV-standardized (std.lv)
-- **Modification indices** — identify model misspecifications
-- **Multi-group analysis** — configural and metric invariance with chi-square difference testing
+- **Five estimators** — ML, MLR (robust), DWLS (ordinal), FIML (missing data), Bayesian MCMC
+- **Bayesian estimation** — NumPyro NUTS sampler with adaptive priors, adaptive convergence, WAIC, and PSIS-LOO
+- **GPU-accelerated** — Bayesian estimation runs on NVIDIA GPUs via JAX for large models and datasets
+- **IRT models** — 1PL (Rasch), 2PL, and Graded Response Model with ICC, information functions, and ability estimation
+- **Multi-group analysis** — configural, metric, scalar, and strict invariance with chi-square difference testing
+- **Fit indices** — chi-square, CFI, TLI, RMSEA (with CI), SRMR, AIC, BIC, WAIC, LOO
+- **Diagnostics** — modification indices, standardized solutions, residuals, Mardia's normality test, R-squared, reliability
 - **Validated against lavaan** — parameter estimates and standard errors match within 0.005
 
 ## Installation
 
 ```bash
-pip install semla
+pip install semla              # core (ML, MLR, DWLS, FIML, IRT, multi-group)
+pip install semla[bayes]       # + Bayesian estimation (CPU)
+pip install semla[bayes-cuda]  # + Bayesian estimation (NVIDIA GPU)
 ```
 
 Or from source:
@@ -46,9 +50,9 @@ Or from source:
 ```bash
 git clone https://github.com/amospagin/semla.git
 cd semla
-pip install -e .
+pip install -e ".[bayes]"
 ```
 
 ## Why semla?
 
-There's no mature Python package that lets you specify SEM models with lavaan syntax. If you're a researcher who uses lavaan in R but works in Python for data processing, semla lets you stay in one language.
+There's no mature Python package that lets you specify SEM models with lavaan syntax and run both frequentist and Bayesian estimation from the same interface. If you're a researcher who uses lavaan or blavaan in R but works in Python, semla lets you stay in one language — with the added benefit of GPU-accelerated Bayesian inference via JAX for models that would take hours on CPU.
