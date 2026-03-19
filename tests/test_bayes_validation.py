@@ -34,6 +34,23 @@ SEM_SYNTAX = """
     visual ~~ textual
 """
 
+TWOFACTOR_SYNTAX = """
+    f1 =~ x1 + x2 + x3 + x4
+    f2 =~ x5 + x6 + x7 + x8
+"""
+
+CONSTRAINT_SYNTAX = """
+    visual  =~ x1 + a*x2 + a*x3
+    textual =~ x4 + x5 + x6
+    speed   =~ x7 + x8 + x9
+"""
+
+MEANSTRUCTURE_SYNTAX = """
+    visual  =~ x1 + x2 + x3
+    textual =~ x4 + x5 + x6
+    speed   =~ x7 + x8 + x9
+"""
+
 
 @pytest.fixture(scope="module")
 def hs_data():
@@ -248,6 +265,244 @@ class TestSEMValidation:
                 f"Loading {row['param']}: ML={row['ml_est']:.3f}, "
                 f"Bayes={row['bayes_mean']:.3f}, diff={row['diff']:.3f}"
             )
+
+
+# ── Two-factor CFA validation ──────────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def ml_twofactor(hs_data):
+    return cfa(TWOFACTOR_SYNTAX, data=hs_data)
+
+
+@pytest.fixture(scope="module")
+def bayes_twofactor(hs_data):
+    return cfa(
+        TWOFACTOR_SYNTAX,
+        data=hs_data,
+        estimator="bayes",
+        warmup=1000,
+        draws=3000,
+        chains=4,
+        seed=123,
+        adapt_convergence=False,
+        progress_bar=False,
+    )
+
+
+class TestTwoFactorValidation:
+    """Compare 2-factor CFA: Bayesian vs ML."""
+
+    def test_bayes_converged(self, bayes_twofactor):
+        diag = bayes_twofactor.results.diagnostics()
+        assert diag["max_rhat"] < 1.05
+
+    def test_loadings_close(self, ml_twofactor, bayes_twofactor):
+        comp = _compare_estimates(ml_twofactor, bayes_twofactor)
+        loadings = comp[comp["category"] == "loadings"]
+        for _, row in loadings.iterrows():
+            assert row["diff"] < 0.15, (
+                f"Loading {row['param']}: ML={row['ml_est']:.3f}, "
+                f"Bayes={row['bayes_mean']:.3f}, diff={row['diff']:.3f}"
+            )
+
+    def test_variances_close(self, ml_twofactor, bayes_twofactor):
+        comp = _compare_estimates(ml_twofactor, bayes_twofactor)
+        variances = comp[comp["category"].isin(
+            ["residual_variances", "factor_variances"]
+        )]
+        for _, row in variances.iterrows():
+            assert row["diff"] < 0.3, (
+                f"Variance {row['param']}: ML={row['ml_est']:.3f}, "
+                f"Bayes={row['bayes_mean']:.3f}, diff={row['diff']:.3f}"
+            )
+
+    def test_covariance_close(self, ml_twofactor, bayes_twofactor):
+        comp = _compare_estimates(ml_twofactor, bayes_twofactor)
+        covs = comp[comp["category"] == "covariances"]
+        for _, row in covs.iterrows():
+            assert row["diff"] < 0.15, (
+                f"Covariance {row['param']}: ML={row['ml_est']:.3f}, "
+                f"Bayes={row['bayes_mean']:.3f}, diff={row['diff']:.3f}"
+            )
+
+    def test_ml_within_bayes_ci(self, ml_twofactor, bayes_twofactor):
+        ml_est = ml_twofactor.estimates()
+        ml_free = ml_est[ml_est["free"]]
+        bayes_est = bayes_twofactor.results.estimates()
+
+        n_within = 0
+        n_total = 0
+        for _, ml_row in ml_free.iterrows():
+            match = bayes_est[
+                (bayes_est["lhs"] == ml_row["lhs"]) &
+                (bayes_est["op"] == ml_row["op"]) &
+                (bayes_est["rhs"] == ml_row["rhs"])
+            ]
+            if match.empty:
+                continue
+            n_total += 1
+            if match.iloc[0]["ci.lower"] <= ml_row["est"] <= match.iloc[0]["ci.upper"]:
+                n_within += 1
+
+        coverage = n_within / n_total if n_total > 0 else 0
+        assert coverage >= 0.80
+
+
+# ── Equality constraints validation ────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def ml_constraint(hs_data):
+    return cfa(CONSTRAINT_SYNTAX, data=hs_data)
+
+
+@pytest.fixture(scope="module")
+def bayes_constraint(hs_data):
+    return cfa(
+        CONSTRAINT_SYNTAX,
+        data=hs_data,
+        estimator="bayes",
+        warmup=1000,
+        draws=3000,
+        chains=4,
+        seed=99,
+        adapt_convergence=False,
+        progress_bar=False,
+    )
+
+
+class TestConstraintValidation:
+    """Compare CFA with equality constraints: Bayesian vs ML."""
+
+    def test_bayes_converged(self, bayes_constraint):
+        diag = bayes_constraint.results.diagnostics()
+        assert diag["max_rhat"] < 1.05
+
+    def test_constrained_loading_close(self, ml_constraint, bayes_constraint):
+        """The constrained loading (a) should match ML."""
+        ml_est = ml_constraint.estimates()
+        ml_a = ml_est[(ml_est["lhs"] == "visual") & (ml_est["op"] == "=~") &
+                      (ml_est["rhs"] == "x2") & (ml_est["free"])]
+        bayes_est = bayes_constraint.results.estimates()
+        bayes_a = bayes_est[(bayes_est["lhs"] == "visual") &
+                            (bayes_est["op"] == "=~") &
+                            (bayes_est["rhs"] == "x2")]
+        if not ml_a.empty and not bayes_a.empty:
+            diff = abs(ml_a.iloc[0]["est"] - bayes_a.iloc[0]["mean"])
+            assert diff < 0.15, f"Constrained loading: ML={ml_a.iloc[0]['est']:.3f}, Bayes={bayes_a.iloc[0]['mean']:.3f}"
+
+    def test_constraint_enforced(self, bayes_constraint):
+        """x2 and x3 loadings should be equal in posterior draws."""
+        draws = bayes_constraint.results.draws()
+        # With equality constraint, both map to the same parameter
+        # so they should have identical draws
+        if "visual=~x2" in draws.columns and "visual=~x3" not in draws.columns:
+            # Constrained: only one key exists
+            pass  # constraint enforced
+        elif "visual=~x2" in draws.columns and "visual=~x3" in draws.columns:
+            # Both exist but should be identical
+            np.testing.assert_array_equal(
+                draws["visual=~x2"].values, draws["visual=~x3"].values
+            )
+
+    def test_other_loadings_close(self, ml_constraint, bayes_constraint):
+        comp = _compare_estimates(ml_constraint, bayes_constraint)
+        loadings = comp[comp["category"] == "loadings"]
+        for _, row in loadings.iterrows():
+            assert row["diff"] < 0.15, (
+                f"Loading {row['param']}: ML={row['ml_est']:.3f}, "
+                f"Bayes={row['bayes_mean']:.3f}, diff={row['diff']:.3f}"
+            )
+
+
+# ── Mean structure validation ──────────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def ml_meanstructure(hs_data):
+    return cfa(MEANSTRUCTURE_SYNTAX, data=hs_data, meanstructure=True)
+
+
+@pytest.fixture(scope="module")
+def bayes_meanstructure(hs_data):
+    return cfa(
+        MEANSTRUCTURE_SYNTAX,
+        data=hs_data,
+        estimator="bayes",
+        meanstructure=True,
+        warmup=1000,
+        draws=3000,
+        chains=4,
+        seed=77,
+        adapt_convergence=False,
+        progress_bar=False,
+    )
+
+
+class TestMeanStructureValidation:
+    """Compare CFA with mean structure: Bayesian vs ML."""
+
+    def test_bayes_converged(self, bayes_meanstructure):
+        diag = bayes_meanstructure.results.diagnostics()
+        assert diag["max_rhat"] < 1.05
+
+    def test_intercepts_close(self, ml_meanstructure, bayes_meanstructure):
+        ml_est = ml_meanstructure.estimates()
+        ml_intercepts = ml_est[(ml_est["op"] == "~1") & (ml_est["free"])]
+        bayes_est = bayes_meanstructure.results.estimates()
+
+        for _, ml_row in ml_intercepts.iterrows():
+            match = bayes_est[
+                (bayes_est["lhs"] == ml_row["lhs"]) &
+                (bayes_est["op"] == "~1")
+            ]
+            if match.empty:
+                continue
+            diff = abs(ml_row["est"] - match.iloc[0]["mean"])
+            assert diff < 0.15, (
+                f"Intercept {ml_row['lhs']}: ML={ml_row['est']:.3f}, "
+                f"Bayes={match.iloc[0]['mean']:.3f}, diff={diff:.3f}"
+            )
+
+    def test_loadings_close(self, ml_meanstructure, bayes_meanstructure):
+        comp = _compare_estimates(ml_meanstructure, bayes_meanstructure)
+        loadings = comp[comp["category"] == "loadings"]
+        for _, row in loadings.iterrows():
+            assert row["diff"] < 0.15, (
+                f"Loading {row['param']}: ML={row['ml_est']:.3f}, "
+                f"Bayes={row['bayes_mean']:.3f}, diff={row['diff']:.3f}"
+            )
+
+    def test_variances_close(self, ml_meanstructure, bayes_meanstructure):
+        comp = _compare_estimates(ml_meanstructure, bayes_meanstructure)
+        variances = comp[comp["category"].isin(
+            ["residual_variances", "factor_variances"]
+        )]
+        for _, row in variances.iterrows():
+            assert row["diff"] < 0.3, (
+                f"Variance {row['param']}: ML={row['ml_est']:.3f}, "
+                f"Bayes={row['bayes_mean']:.3f}, diff={row['diff']:.3f}"
+            )
+
+    def test_ml_within_bayes_ci(self, ml_meanstructure, bayes_meanstructure):
+        ml_est = ml_meanstructure.estimates()
+        ml_free = ml_est[ml_est["free"]]
+        bayes_est = bayes_meanstructure.results.estimates()
+
+        n_within = 0
+        n_total = 0
+        for _, ml_row in ml_free.iterrows():
+            match = bayes_est[
+                (bayes_est["lhs"] == ml_row["lhs"]) &
+                (bayes_est["op"] == ml_row["op"]) &
+                (bayes_est["rhs"] == ml_row["rhs"])
+            ]
+            if match.empty:
+                continue
+            n_total += 1
+            if match.iloc[0]["ci.lower"] <= ml_row["est"] <= match.iloc[0]["ci.upper"]:
+                n_within += 1
+
+        coverage = n_within / n_total if n_total > 0 else 0
+        assert coverage >= 0.80
 
 
 # ── WAIC sanity checks ─────────────────────────────────────────────────
