@@ -55,23 +55,7 @@ LAVAAN_MLR_PARAMS = [
     ("textual", "~~", "speed", 0.173495, 0.056307),
 ]
 
-# Parameters whose robust SEs currently diverge from lavaan (known issue).
-# The sandwich estimator in semla does not yet match lavaan for all params.
-_SE_XFAIL = {
-    "visual =~ x2",
-    "visual =~ x3",
-    "speed =~ x8",
-    "speed =~ x9",
-    "x1 ~~ x1",
-    "x2 ~~ x2",
-    "x3 ~~ x3",
-    "x7 ~~ x7",
-    "x8 ~~ x8",
-    "x9 ~~ x9",
-    "visual ~~ visual",
-    "speed ~~ speed",
-    "visual ~~ textual",
-}
+_SE_XFAIL = set()  # All SEs now match lavaan (fixed in sandwich estimator rewrite)
 
 
 class TestMLRParameterEstimates:

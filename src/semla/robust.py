@@ -61,15 +61,16 @@ def compute_robust_se(
 ) -> np.ndarray:
     """Compute robust (sandwich) standard errors for ML.
 
-    Uses the Gamma-based sandwich formula:
-        V = (Δ'WΔ)⁻¹ @ (Δ'WΓW Δ) @ (Δ'WΔ)⁻¹
-    where Δ = Jacobian of vech(Σ) w.r.t. θ, W = ML weight matrix,
-    and Γ = asymptotic covariance of vech(S).
-
-    SE = sqrt(diag(V) / N)
+    Uses the sandwich formula matching lavaan's MLR:
+        V = I_obs^{-1} @ B @ I_obs^{-1} / N
+    where I_obs = observed information (per obs) and
+    B = outer product of casewise scores (per obs).
     """
+    from .estimation import ml_objective
+
     eps = 1e-7
     k = len(theta)
+    N = n_obs
 
     A_mat, S_mat = spec.unpack(theta)
     sigma = _model_implied_cov(A_mat, S_mat, spec.F)
@@ -82,11 +83,45 @@ def compute_robust_se(
         return np.full(k, np.nan)
 
     p = sigma.shape[0]
-    indices = _vech_indices(p)
-    m = len(indices)
 
-    # Jacobian Δ: d(vech(Σ))/d(θ), shape (m, k)
-    Delta = np.zeros((m, k))
+    # Use ML sample covariance (/ N) for consistency with casewise scores
+    sample_cov_ml = sample_cov * (N - 1) / N
+
+    # Bread: observed information (numerical Hessian of -loglik per obs)
+    # -loglik ∝ N/2 * F_ML, so Hessian of -loglik/N = 1/2 * Hessian of F_ML
+    eps_h = 1e-5
+    I_obs = np.zeros((k, k))
+    for i in range(k):
+        for j in range(i, k):
+            tp = theta.copy(); tm = theta.copy()
+            tpp = theta.copy(); tmm = theta.copy()
+            tp[i] += eps_h; tp[j] += eps_h
+            tm[i] += eps_h; tm[j] -= eps_h
+            tpp[i] -= eps_h; tpp[j] += eps_h
+            tmm[i] -= eps_h; tmm[j] -= eps_h
+            H_ij = (
+                ml_objective(tp, spec, sample_cov, N)
+                - ml_objective(tm, spec, sample_cov, N)
+                - ml_objective(tpp, spec, sample_cov, N)
+                + ml_objective(tmm, spec, sample_cov, N)
+            ) / (4 * eps_h ** 2)
+            # Per-observation info: (N/2) * H / N = H/2
+            I_obs[i, j] = 0.5 * H_ij
+            I_obs[j, i] = I_obs[i, j]
+
+    try:
+        I_obs_inv = np.linalg.inv(I_obs)
+    except np.linalg.LinAlgError:
+        return np.full(k, np.nan)
+
+    if raw_data is None:
+        # Fallback: return ML SEs
+        var_theta = np.diag(I_obs_inv) / N
+        return np.where(var_theta > 0, np.sqrt(var_theta), np.nan)
+
+    # Meat: casewise scores (per observation)
+    # score_ki = -1/2 * tr(Σ⁻¹ dΣ_i) + 1/2 * e_k' Σ⁻¹ dΣ_i Σ⁻¹ e_k
+    dSigma = np.zeros((k, p, p))
     for i in range(k):
         theta_plus = theta.copy()
         theta_minus = theta.copy()
@@ -98,34 +133,31 @@ def compute_robust_se(
         sig_m = _model_implied_cov(A_m, S_m, spec.F)
         if sig_p is None or sig_m is None:
             return np.full(k, np.nan)
-        dSig = (sig_p - sig_m) / (2 * eps)
-        for a, (r, c) in enumerate(indices):
-            Delta[a, i] = dSig[r, c]
+        dSigma[i] = (sig_p - sig_m) / (2 * eps)
 
-    # Weight matrix W_ml in vech form
-    W_ml = np.zeros((m, m))
-    for a, (i, j) in enumerate(indices):
-        for b, (r, c) in enumerate(indices):
-            val = sigma_inv[i, r] * sigma_inv[j, c]
-            if r != c:
-                val += sigma_inv[i, c] * sigma_inv[j, r]
-            W_ml[a, b] = val
+    SinvdSiSinv = np.zeros((k, p, p))
+    trace_SinvdSi = np.zeros(k)
+    for i in range(k):
+        SinvdS_i = sigma_inv @ dSigma[i]
+        SinvdSiSinv[i] = SinvdS_i @ sigma_inv
+        trace_SinvdSi[i] = np.trace(SinvdS_i)
 
-    # Bread: J = Δ'WΔ
-    WDelta = W_ml @ Delta  # (m, k)
-    J = Delta.T @ WDelta   # (k, k)
-    try:
-        J_inv = np.linalg.inv(J)
-    except np.linalg.LinAlgError:
-        return np.full(k, np.nan)
+    scores = np.zeros((N, k))
+    for i in range(k):
+        Me = raw_data @ SinvdSiSinv[i].T  # (N, p)
+        quad = np.sum(raw_data * Me, axis=1)  # (N,)
+        scores[:, i] = -0.5 * trace_SinvdSi[i] + 0.5 * quad
 
-    # Meat: Δ'W Γ W Δ
-    meat = WDelta.T @ gamma @ WDelta  # (k, k)
+    # Mean-center scores to ensure they sum to zero
+    scores -= scores.mean(axis=0)
 
-    # Sandwich: V = J⁻¹ meat J⁻¹, SE = sqrt(diag(V) / N)
-    V = J_inv @ meat @ J_inv
+    # B = (1/N) * scores' @ scores (per-observation outer product)
+    B = (scores.T @ scores) / N
 
-    var_theta = np.diag(V) / n_obs
+    # Sandwich: V = I_obs^{-1} @ B @ I_obs^{-1} / N
+    V = I_obs_inv @ B @ I_obs_inv / N
+
+    var_theta = np.diag(V)
     se = np.where(var_theta > 0, np.sqrt(var_theta), np.nan)
     return se
 
