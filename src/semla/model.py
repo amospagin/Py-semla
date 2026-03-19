@@ -12,6 +12,9 @@ from .results import ModelResults
 from .specification import build_specification
 from .syntax import parse_syntax
 
+# Operators that are not part of the model specification (filtered before building spec)
+_NON_MODEL_OPS = {":=", ">", "<", ">=", "<=", "=="}
+
 
 def _validate_data(tokens, data: pd.DataFrame) -> None:
     """Validate that data is compatible with the model specification."""
@@ -21,8 +24,8 @@ def _validate_data(tokens, data: pd.DataFrame) -> None:
     latent_vars = {tok.lhs for tok in tokens if tok.op == "=~"}
     referenced_vars = set()
     for tok in tokens:
-        if tok.op == ":=":
-            continue  # defined params reference labels, not data variables
+        if tok.op in _NON_MODEL_OPS:
+            continue  # defined params and constraints reference labels, not data variables
         for term in tok.rhs:
             if term.var not in latent_vars:
                 referenced_vars.add(term.var)
@@ -131,8 +134,9 @@ class Model:
         if any(tok.op == "~1" for tok in self.tokens):
             meanstructure = True
 
-        # Filter out := tokens (defined params, not model specification)
-        model_tokens = [tok for tok in self.tokens if tok.op != ":="]
+        # Filter out := tokens and constraint tokens (not model specification)
+        _NON_MODEL_OPS = {":=", ">", "<", ">=", "<=", "=="}
+        model_tokens = [tok for tok in self.tokens if tok.op not in _NON_MODEL_OPS]
 
         int_ov_free = kwargs.get("int_ov_free", True)
         int_lv_free = kwargs.get("int_lv_free", False)
@@ -198,6 +202,15 @@ class Model:
                 )
             self.data = data
 
+        # Extract nonlinear constraints
+        from .constraints import extract_constraints, build_scipy_constraints
+        self._constraints = extract_constraints(self.tokens)
+        scipy_constraints = None
+        if self._constraints:
+            scipy_constraints = build_scipy_constraints(
+                self._constraints, self.spec,
+            )
+
         # Estimate
         estimator = kwargs.get("estimator", "ML").upper()
 
@@ -209,7 +222,7 @@ class Model:
             from .fiml import estimate_fiml
             # FIML requires mean structure
             if not self.spec.meanstructure:
-                model_tokens = [tok for tok in self.tokens if tok.op != ":="]
+                model_tokens = [tok for tok in self.tokens if tok.op not in _NON_MODEL_OPS]
                 self.spec = build_specification(
                     model_tokens, data.columns.tolist(),
                     auto_cov_latent=kwargs.get("auto_cov_latent", True),
@@ -222,7 +235,8 @@ class Model:
                         self.spec.m_values[idx] = data[var].mean()
             est_result = estimate_fiml(self.spec, data)
         elif estimator in ("ML", "MLR"):
-            est_result = estimate(self.spec, data)
+            est_result = estimate(self.spec, data,
+                                  scipy_constraints=scipy_constraints)
             if estimator == "MLR":
                 est_result._estimator_type = "MLR"
         elif estimator == "DWLS":
@@ -358,7 +372,7 @@ class Model:
 
         # Collect bootstrap estimates
         boot_matrix = np.full((nboot, n_params), np.nan)
-        model_tokens = [tok for tok in self.tokens if tok.op != ":="]
+        model_tokens = [tok for tok in self.tokens if tok.op not in _NON_MODEL_OPS]
 
         for b in range(nboot):
             idx = rng.integers(0, n, size=n)
@@ -491,7 +505,7 @@ class MultiGroupModel:
             meanstructure = True
 
         # Filter := tokens
-        model_tokens = [tok for tok in tokens if tok.op != ":="]
+        model_tokens = [tok for tok in tokens if tok.op not in _NON_MODEL_OPS]
 
         auto_cov_lv_x = kwargs.get("auto_cov_lv_x", False)
         self.mg_spec = build_multigroup_spec(

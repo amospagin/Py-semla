@@ -251,6 +251,7 @@ def _compute_se(
 def estimate(
     spec: ModelSpecification,
     data: pd.DataFrame,
+    scipy_constraints: list[dict] | None = None,
 ) -> EstimationResult:
     """Estimate model parameters via Maximum Likelihood.
 
@@ -260,6 +261,9 @@ def estimate(
         Model specification from ``build_specification()``.
     data : pd.DataFrame
         Data with columns matching observed variables.
+    scipy_constraints : list[dict], optional
+        Nonlinear constraints in scipy format. When present, SLSQP is used
+        instead of BFGS.
 
     Returns
     -------
@@ -281,29 +285,56 @@ def estimate(
     # Starting values
     theta0 = spec.pack_start()
 
-    # Optimize with BFGS
-    result = optimize.minimize(
-        ml_objective,
-        theta0,
-        args=(spec, sample_cov, n_obs, sample_mean),
-        method="BFGS",
-        jac=ml_gradient,
-        options={"maxiter": 10000, "gtol": 1e-6},
-    )
-
-    # Polish: re-run from the BFGS solution with tighter tolerance
-    if result.success:
-        result2 = optimize.minimize(
+    if scipy_constraints:
+        # Constrained optimization with SLSQP
+        result = optimize.minimize(
             ml_objective,
-            result.x,
+            theta0,
+            args=(spec, sample_cov, n_obs, sample_mean),
+            method="SLSQP",
+            jac=ml_gradient,
+            constraints=scipy_constraints,
+            options={"maxiter": 10000, "ftol": 1e-10},
+        )
+
+        # Polish with tighter tolerance
+        if result.success:
+            result2 = optimize.minimize(
+                ml_objective,
+                result.x,
+                args=(spec, sample_cov, n_obs, sample_mean),
+                method="SLSQP",
+                jac=ml_gradient,
+                constraints=scipy_constraints,
+                options={"maxiter": 10000, "ftol": 1e-12},
+            )
+            if result2.fun <= result.fun + 1e-10:
+                result2.success = True
+                result = result2
+    else:
+        # Unconstrained optimization with BFGS
+        result = optimize.minimize(
+            ml_objective,
+            theta0,
             args=(spec, sample_cov, n_obs, sample_mean),
             method="BFGS",
             jac=ml_gradient,
-            options={"maxiter": 10000, "gtol": 1e-9},
+            options={"maxiter": 10000, "gtol": 1e-6},
         )
-        if result2.fun <= result.fun + 1e-10:
-            result2.success = True  # accept if objective didn't increase
-            result = result2
+
+        # Polish: re-run from the BFGS solution with tighter tolerance
+        if result.success:
+            result2 = optimize.minimize(
+                ml_objective,
+                result.x,
+                args=(spec, sample_cov, n_obs, sample_mean),
+                method="BFGS",
+                jac=ml_gradient,
+                options={"maxiter": 10000, "gtol": 1e-9},
+            )
+            if result2.fun <= result.fun + 1e-10:
+                result2.success = True  # accept if objective didn't increase
+                result = result2
 
     if not result.success:
         warnings.warn(

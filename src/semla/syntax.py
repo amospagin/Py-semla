@@ -52,6 +52,9 @@ class DefinedParameter:
 _OPERATORS = ["=~", "~~", "~1", "~", ":="]
 _OP_PATTERN = re.compile(r"(:=|=~|~~|~1|~)")
 
+# Constraint operators (for nonlinear constraints like a > 0, a*b == c)
+_CONSTRAINT_OP_PATTERN = re.compile(r"(>=|<=|==|>|<)")
+
 # Modifier pattern: optional "number*" or "label*" prefix on a variable
 _MODIFIER_RE = re.compile(
     r"^(?:(?P<num>[+-]?\d+(?:\.\d+)?)\*)?(?:(?P<label>[A-Za-z_]\w*)\*)?(?P<var>[A-Za-z_][\w.]*)$"
@@ -138,9 +141,26 @@ def parse_syntax(model: str) -> list[FormulaToken]:
         # Find the operator
         m = _OP_PATTERN.search(line)
         if not m:
+            # Check for constraint operators (>, <, >=, <=, ==)
+            mc = _CONSTRAINT_OP_PATTERN.search(line)
+            if mc:
+                op = mc.group(1)
+                lhs_expr = line[:mc.start()].strip()
+                rhs_expr = line[mc.end():].strip()
+                if not lhs_expr or not rhs_expr:
+                    raise SyntaxError(
+                        f"Constraint must have expressions on both sides: "
+                        f"'{raw_line.strip()}'"
+                    )
+                # Store constraint: lhs=lhs_expr, op=constraint_op, rhs=[RHSTerm(rhs_expr)]
+                tokens.append(FormulaToken(
+                    lhs=lhs_expr, op=op, rhs=[RHSTerm(var=rhs_expr)]
+                ))
+                continue
+
             raise SyntaxError(
                 f"No valid operator found in line: '{raw_line.strip()}'. "
-                f"Expected one of: =~ ~ ~~ ~1 :="
+                f"Expected one of: =~ ~ ~~ ~1 := > < >= <= =="
             )
 
         op = m.group(1)
