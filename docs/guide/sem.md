@@ -26,7 +26,7 @@ fit.summary()
 
 | | `cfa()` | `sem()` |
 |---|---------|---------|
-| Latent covariances | Auto-added (all factors correlate) | Only if specified |
+| Latent covariances | Auto-added (all factors correlate) | Auto-added between exogenous latent variables only |
 | Use case | Testing measurement structure | Testing causal/structural paths |
 
 If your model has regressions between latent variables (`~`), use `sem()`. If it's purely a factor model, use `cfa()`.
@@ -93,6 +93,33 @@ model = """
     f1 =~ x1 + a*x2 + a*x3   # x2 and x3 loadings forced equal
 """
 ```
+
+## Nonlinear Constraints
+
+Go beyond simple equality with inequality and nonlinear constraints on labeled parameters:
+
+```python
+# Inequality constraints
+model = """
+    f1 =~ x1 + a*x2 + b*x3
+    f2 =~ x4 + x5 + x6
+    a > 0          # loading must be positive
+    b < 1          # loading must be less than 1
+    a < b          # ordering constraint
+"""
+
+# Nonlinear equality constraints
+model = """
+    f1 =~ x1 + a*x2 + b*x3
+    f2 =~ x4 + c*x5 + x6
+    a + b == c     # sum of two loadings equals a third
+    a*b == 0.5     # product constraint
+"""
+```
+
+Supported operators: `>`, `<`, `>=`, `<=`, `==`. Expressions can reference any labeled parameter and use arithmetic (`+`, `-`, `*`, `/`).
+
+When constraints are present, the optimizer switches from BFGS to SLSQP (sequential least-squares programming). Models without constraints are unaffected.
 
 ## R-Squared and Factor Scores
 

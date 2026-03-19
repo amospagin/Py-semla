@@ -62,6 +62,7 @@ fit.summary()
 | **Bayesian** | Adaptive priors, adaptive convergence, parallel chains, WAIC, PSIS-LOO, posterior draws |
 | **Batch estimation** | Run many Bayesian models in parallel across CPU cores + GPU with `batch_bayes()` |
 | **Diagnostics** | Fit indices (CFI, TLI, RMSEA, SRMR), modification indices, residuals, Mardia's normality test |
+| **Constraints** | Equality constraints (labels), nonlinear inequality/equality constraints (`>`, `<`, `==`) |
 | **Inference** | Standard errors, bootstrap CIs, chi-square difference test, model comparison table, R-squared, reliability (omega, alpha) |
 | **Post-estimation** | Factor scores (regression, Bartlett), standardized solutions, model-implied matrices (`fitted()`), parameter covariance matrix (`vcov()`) |
 
@@ -76,6 +77,8 @@ semla uses the same operators as lavaan:
 | `~~` | (Co)variance | `x1 ~~ x2` |
 | `~1` | Intercept | `y ~1` |
 | `:=` | Defined parameter | `indirect := a*b` |
+| `>` `<` `>=` `<=` | Inequality constraint | `a > 0` |
+| `==` | Nonlinear equality constraint | `a*b == 0.5` |
 
 ### Modifiers
 

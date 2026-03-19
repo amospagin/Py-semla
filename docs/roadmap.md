@@ -25,6 +25,7 @@
 - [x] R-squared for endogenous variables
 - [x] Mean structure and intercepts (~1)
 - [x] Equality constraints via parameter labels
+- [x] Nonlinear parameter constraints (>, <, >=, <=, ==)
 - [x] Indirect effects and mediation (:= operator with delta method SEs)
 - [x] Reliability measures (McDonald's omega, Cronbach's alpha)
 - [x] Factor score prediction (regression and Bartlett)
@@ -34,6 +35,9 @@
 - [x] Parameter variance-covariance matrix (vcov)
 - [x] Parallel chain execution on CPU
 - [x] Positive loading constraints for sign identification
+- [x] Auto-add exogenous latent variable covariances in sem() (lavaan-matching)
+- [x] True DWLS objective function (diagonally weighted least squares)
+- [x] FIML validated on multiple MCAR missingness patterns
 - [x] Validated against lavaan 0.6-20
 
 ## Future Directions
@@ -46,11 +50,7 @@
 - [ ] Monte Carlo simulation / power analysis ([#52](https://github.com/amospagin/semla/issues/52))
 - [ ] Validate RI-CLPM ([#53](https://github.com/amospagin/semla/issues/53))
 - [ ] Path diagram visualization ([#38](https://github.com/amospagin/semla/issues/38))
-- [ ] Auto-add exogenous observed variable covariances in sem() ([#42](https://github.com/amospagin/semla/issues/42))
-- [ ] Nonlinear parameter constraints ([#45](https://github.com/amospagin/semla/issues/45))
 - [ ] Publication-ready table export ([#46](https://github.com/amospagin/semla/issues/46))
 - [ ] Complex survey weight support ([#47](https://github.com/amospagin/semla/issues/47))
 - [ ] Alignment method for approximate invariance ([#54](https://github.com/amospagin/semla/issues/54))
-- [ ] Improve DWLS implementation ([#22](https://github.com/amospagin/semla/issues/22))
-- [ ] Validate FIML on multiple missingness patterns ([#24](https://github.com/amospagin/semla/issues/24))
 - [ ] PyPI release

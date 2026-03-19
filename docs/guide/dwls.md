@@ -26,10 +26,10 @@ fit.summary()
 
 ## What Happens Under the Hood
 
-1. **Polychoric correlations** are computed for all pairs of ordinal variables -- these estimate the correlation between the latent continuous variables assumed to underlie the ordinal responses
-2. The model is fitted via **diagonally weighted least squares** on the polychoric correlation matrix
-3. **Robust standard errors** are computed using a sandwich estimator
-4. The **chi-square test** is scaled (Satorra-Bentler type) to correct for non-normality
+1. **Polychoric correlations** are computed for all pairs of ordinal variables — these estimate the correlation between the latent continuous variables assumed to underlie the ordinal responses
+2. The model is fitted by minimizing the **true DWLS objective**: `F = (s - σ)' W (s - σ)`, where `W` is the diagonal of the inverse asymptotic covariance matrix of the polychoric correlations
+3. **Robust standard errors** are computed using a sandwich estimator: `V = (J'WJ)⁻¹ J'WΓWJ (J'WJ)⁻¹`
+4. The **chi-square test** uses a ULS-based statistic with Satorra-Bentler mean adjustment
 
 ## Example with Ordinal Data
 
