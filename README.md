@@ -20,7 +20,8 @@ Fit CFA, SEM, and IRT models with the same `=~`, `~`, and `~~` operators you're 
 
 ```bash
 pip install semla              # core (ML, MLR, DWLS, FIML, IRT, multi-group)
-pip install semla[bayes]       # + Bayesian estimation (NumPyro/JAX)
+pip install semla[bayes]       # + Bayesian estimation (NumPyro/JAX, CPU)
+pip install semla[bayes-cuda]  # + Bayesian estimation (NumPyro/JAX, NVIDIA GPU)
 ```
 
 Or install from source:

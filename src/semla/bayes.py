@@ -25,11 +25,12 @@ from .specification import ModelSpecification, ParamInfo
 # ---------------------------------------------------------------------------
 
 def _set_parallel_cores(n_cores: int) -> None:
-    """Configure JAX to use *n_cores* virtual CPU devices for parallel chains.
+    """Configure JAX to use *n_cores* devices for parallel chains.
 
-    Must be called **before** JAX initializes its backend (i.e. before any
-    JAX computation).  If JAX is already initialized with a different device
-    count, a warning is emitted.
+    On CPU, creates virtual devices via an XLA flag (must be called before
+    JAX initializes).  On GPU, devices already exist (one per GPU) so this
+    is a no-op — NumPyro distributes chains across available GPUs
+    automatically.
     """
     import os
     import sys
@@ -46,6 +47,10 @@ def _set_parallel_cores(n_cores: int) -> None:
     if jax_mod is not None:
         try:
             current = jax_mod.local_device_count()
+            # On GPU, devices are physical — don't try to override
+            default_backend = jax_mod.default_backend()
+            if default_backend != "cpu":
+                return  # GPU/TPU: devices managed by hardware
             if current >= n_cores:
                 return  # already have enough devices
             # JAX is initialized but with fewer devices — can't change
