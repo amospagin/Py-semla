@@ -127,3 +127,58 @@ class TestBuildSpecification:
         i_f1 = spec.all_vars.index("f1")
         i_f2 = spec.all_vars.index("f2")
         assert spec.A_free[i_f2, i_f1]
+
+    def test_auto_cov_lv_x_adds_exogenous_covariances(self):
+        """auto_cov_lv_x adds covariances between exogenous latent vars only."""
+        model = """
+            f1 =~ x1 + x2 + x3
+            f2 =~ x4 + x5 + x6
+            f3 =~ x7 + x8 + x9
+            f3 ~ f1 + f2
+        """
+        tokens = parse_syntax(model)
+        obs = [f"x{i}" for i in range(1, 10)]
+        spec = build_specification(tokens, obs, auto_cov_latent=False, auto_cov_lv_x=True)
+
+        i_f1 = spec.all_vars.index("f1")
+        i_f2 = spec.all_vars.index("f2")
+        i_f3 = spec.all_vars.index("f3")
+
+        # f1 ~~ f2 should be auto-added (both exogenous)
+        assert spec.S_free[i_f1, i_f2], "Exogenous covariance f1~~f2 should be free"
+        # f1 ~~ f3 should NOT be added (f3 is endogenous)
+        assert not spec.S_free[i_f1, i_f3], "f1~~f3 should not be added (f3 is endogenous)"
+        assert not spec.S_free[i_f2, i_f3], "f2~~f3 should not be added (f3 is endogenous)"
+
+    def test_auto_cov_lv_x_skips_higher_order_indicators(self):
+        """Latent vars that are indicators of a higher-order factor are not exogenous."""
+        model = """
+            f1 =~ x1 + x2 + x3
+            f2 =~ x4 + x5 + x6
+            f3 =~ x7 + x8 + x9
+            g =~ f1 + f2 + f3
+        """
+        tokens = parse_syntax(model)
+        obs = [f"x{i}" for i in range(1, 10)]
+        spec = build_specification(tokens, obs, auto_cov_latent=False, auto_cov_lv_x=True)
+
+        i_f1 = spec.all_vars.index("f1")
+        i_f2 = spec.all_vars.index("f2")
+        i_f3 = spec.all_vars.index("f3")
+
+        # f1, f2, f3 are indicators of g — they are endogenous, not exogenous
+        assert not spec.S_free[i_f1, i_f2], "f1~~f2 should not be added (indicators of g)"
+        assert not spec.S_free[i_f1, i_f3], "f1~~f3 should not be added"
+        assert not spec.S_free[i_f2, i_f3], "f2~~f3 should not be added"
+
+    def test_auto_cov_lv_x_no_effect_when_auto_cov_latent(self):
+        """auto_cov_lv_x has no effect when auto_cov_latent is already True."""
+        model = """
+            f1 =~ x1 + x2 + x3
+            f2 =~ x4 + x5 + x6
+        """
+        tokens = parse_syntax(model)
+        obs = ["x1", "x2", "x3", "x4", "x5", "x6"]
+        spec1 = build_specification(tokens, obs, auto_cov_latent=True, auto_cov_lv_x=True)
+        spec2 = build_specification(tokens, obs, auto_cov_latent=True, auto_cov_lv_x=False)
+        assert spec1.n_free == spec2.n_free

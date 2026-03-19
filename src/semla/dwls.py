@@ -1,7 +1,8 @@
 """DWLS (Diagonally Weighted Least Squares) estimation for ordinal SEM.
 
-Uses polychoric correlations as input with ML estimation and
-robust (sandwich) standard errors and scaled chi-square test.
+Uses polychoric correlations as input with true DWLS objective function
+(diagonally weighted residuals) and robust sandwich standard errors
+with Satorra-Bentler scaled chi-square test.
 """
 
 from __future__ import annotations
@@ -44,6 +45,50 @@ class DWLSEstimationResult(EstimationResult):
     weight_diagonal: np.ndarray = None
 
 
+def _dwls_objective(
+    theta: np.ndarray,
+    spec: ModelSpecification,
+    s_offdiag: np.ndarray,
+    weight_diag: np.ndarray,
+) -> float:
+    """True DWLS objective: F = (s - sigma)' W (s - sigma).
+
+    Parameters
+    ----------
+    theta : parameter vector
+    spec : model specification
+    s_offdiag : vech of off-diagonal sample polychoric correlations
+    weight_diag : diagonal weights (1 / asymptotic variance of each correlation)
+    """
+    A, S_mat = spec.unpack(theta)
+    sigma = _model_implied_cov(A, S_mat, spec.F)
+    if sigma is None:
+        return 1e10
+
+    sigma_cor = _cov_to_cor(sigma)
+    sigma_offdiag = _vech_offdiag(sigma_cor)
+
+    diff = s_offdiag - sigma_offdiag
+    return float(diff @ (weight_diag * diff))
+
+
+def _dwls_gradient(
+    theta: np.ndarray,
+    spec: ModelSpecification,
+    s_offdiag: np.ndarray,
+    weight_diag: np.ndarray,
+) -> np.ndarray:
+    """Numerical gradient of DWLS objective."""
+    eps = 1e-7
+    f0 = _dwls_objective(theta, spec, s_offdiag, weight_diag)
+    grad = np.zeros_like(theta)
+    for i in range(len(theta)):
+        theta_plus = theta.copy()
+        theta_plus[i] += eps
+        grad[i] = (_dwls_objective(theta_plus, spec, s_offdiag, weight_diag) - f0) / eps
+    return grad
+
+
 def _compute_jacobian_cor(
     theta: np.ndarray, spec: ModelSpecification
 ) -> np.ndarray:
@@ -74,34 +119,35 @@ def _compute_se_dwls(
     gamma_diagonal: np.ndarray,
     n_obs: int,
 ) -> np.ndarray:
-    """Robust (sandwich) standard errors.
+    """Robust (sandwich) standard errors for DWLS.
 
-    Uses the expected information from ML estimation as the bread,
-    and the asymptotic covariance of polychoric correlations as the meat.
+    V = (J' W J)^{-1} J' W Gamma W J (J' W J)^{-1}
+
+    where W = diag(weight_diagonal) and Gamma = diag(gamma_diagonal * n_obs).
     """
-    # Use standard ML SEs from expected information on polychoric matrix
-    se_ml = _compute_se(theta, spec, polychoric_cov, n_obs)
-
-    # For a more robust approach, compute sandwich SEs
     J = _compute_jacobian_cor(theta, spec)
-    # Scale gamma by n_obs for proper asymptotic variance
-    Gamma = np.diag(gamma_diagonal * n_obs)
+    W = weight_diagonal  # 1-D diagonal
+    Gamma_diag = gamma_diagonal * n_obs  # asymptotic variance, scaled
 
     try:
-        # Sandwich: V = (J'J)^{-1} J' (n*Gamma) J (J'J)^{-1} / (n-1)
-        JtJ = J.T @ J
-        JtJ_inv = np.linalg.pinv(JtJ)
+        # Bread: (J' W J)^{-1}
+        JtWJ = J.T @ (W[:, None] * J)
+        JtWJ_inv = np.linalg.pinv(JtWJ)
 
-        meat = J.T @ Gamma @ J
-        V = JtJ_inv @ meat @ JtJ_inv / (n_obs - 1)
+        # Meat: J' W Gamma W J
+        WGW = W * Gamma_diag * W  # element-wise for diagonal matrices
+        meat = J.T @ (WGW[:, None] * J)
+
+        V = JtWJ_inv @ meat @ JtWJ_inv / (n_obs - 1)
         var_theta = np.diag(V)
         se_robust = np.where(var_theta > 0, np.sqrt(var_theta), np.nan)
 
-        # Use robust SEs where available, fall back to ML SEs
+        # Fall back to ML SEs where robust fails
+        se_ml = _compute_se(theta, spec, polychoric_cov, n_obs)
         se = np.where(np.isnan(se_robust), se_ml, se_robust)
         return se
     except Exception:
-        return se_ml
+        return _compute_se(theta, spec, polychoric_cov, n_obs)
 
 
 def _scaled_chi_square(
@@ -112,25 +158,34 @@ def _scaled_chi_square(
     n_obs: int,
     df: int,
 ) -> tuple[float, float]:
-    """Compute scaled chi-square for DWLS.
+    """Compute mean-adjusted scaled chi-square for DWLS.
 
-    Uses ML chi-square at the DWLS optimum with Satorra-Bentler correction.
+    Uses ULS-based chi-square at the DWLS optimum with Satorra-Bentler
+    mean adjustment, following Muthén, du Toit & Spisic (1997).
+
+    T_scaled = T_ULS / c  where  c = tr(U_d Gamma) / df
     """
-    # ML chi-square on the polychoric matrix
-    f_ml = ml_objective(theta, spec, polychoric_cov, n_obs)
-    T_ml = (n_obs - 1) * f_ml
+    # ULS fit function at DWLS solution
+    A, S_mat = spec.unpack(theta)
+    sigma = _model_implied_cov(A, S_mat, spec.F)
+    if sigma is None:
+        return 0.0, 1.0
+    s_offdiag = _vech_offdiag(polychoric_cov)
+    sigma_offdiag = _vech_offdiag(_cov_to_cor(sigma))
+    resid = s_offdiag - sigma_offdiag
+    f_uls = 0.5 * float(resid @ resid)
+    T_uls = (n_obs - 1) * f_uls
 
-    if T_ml >= 1e8 or df <= 0:
-        return T_ml, 1.0
+    if T_uls >= 1e8 or df <= 0:
+        return T_uls, 1.0
 
-    # Satorra-Bentler correction
+    # Satorra-Bentler mean adjustment
     J = _compute_jacobian_cor(theta, spec)
-    # Scale gamma by n_obs: gamma_diag is Var(r_ij) ≈ 1/(n*info),
-    # but the SB formula needs the asymptotic variance of sqrt(n)*vech(S)
     Gamma = np.diag(gamma_diag * n_obs)
     m = J.shape[0]
 
     try:
+        # U_d for ULS: U = I - Delta (Delta' Delta)^{-1} Delta'
         JtJ_inv = np.linalg.pinv(J.T @ J)
         P = np.eye(m) - J @ JtJ_inv @ J.T
         PG = P @ Gamma
@@ -138,18 +193,21 @@ def _scaled_chi_square(
 
         if trace_PG > 1e-10:
             c = trace_PG / df
-            return T_ml / c, c
+            return T_uls / c, c
         else:
-            return T_ml, 1.0
+            return T_uls, 1.0
     except Exception:
-        return T_ml, 1.0
+        return T_uls, 1.0
 
 
 def estimate_dwls(
     spec: ModelSpecification,
     data: pd.DataFrame,
 ) -> DWLSEstimationResult:
-    """Estimate model using polychoric correlations with ML + robust SEs.
+    """Estimate model using true DWLS on polychoric correlations.
+
+    Minimizes F_DWLS = (s - sigma)' W (s - sigma) where W is the diagonal
+    of the inverse asymptotic covariance matrix of polychoric correlations.
 
     Parameters
     ----------
@@ -168,26 +226,40 @@ def estimate_dwls(
     # Compute polychoric correlations
     R, avar_diag, thresholds = polychoric_correlation_matrix(obs_data)
 
-    # Fit using ML on the polychoric correlation matrix
-    # BFGS with numerical gradient (analytic gradient has precision issues
-    # with polychoric matrices)
-    theta0 = spec.pack_start()
+    # Weight diagonal: inverse asymptotic variance of each off-diagonal element
+    weight_diag = 1.0 / np.maximum(avar_diag, 1e-10)
 
-    result = optimize.minimize(
+    # Vectorized sample correlations (off-diagonal lower triangle)
+    s_offdiag = _vech_offdiag(R)
+
+    # Get starting values via quick ML on polychoric matrix
+    theta0 = spec.pack_start()
+    ml_result = optimize.minimize(
         ml_objective,
         theta0,
         args=(spec, R, n_obs),
         method="BFGS",
-        options={"maxiter": 10000, "gtol": 1e-6},
+        options={"maxiter": 5000, "gtol": 1e-5},
+    )
+    theta_start = ml_result.x if ml_result.success else theta0
+
+    # Optimize true DWLS objective
+    result = optimize.minimize(
+        _dwls_objective,
+        theta_start,
+        jac=_dwls_gradient,
+        args=(spec, s_offdiag, weight_diag),
+        method="BFGS",
+        options={"maxiter": 10000, "gtol": 1e-8},
     )
 
-    # Polish with Nelder-Mead (more robust for polychoric matrices)
+    # Polish with Nelder-Mead
     result2 = optimize.minimize(
-        ml_objective,
+        _dwls_objective,
         result.x,
-        args=(spec, R, n_obs),
+        args=(spec, s_offdiag, weight_diag),
         method="Nelder-Mead",
-        options={"maxiter": 50000, "xatol": 1e-8, "fatol": 1e-10},
+        options={"maxiter": 50000, "xatol": 1e-10, "fatol": 1e-12},
     )
     if result2.fun <= result.fun + 1e-10:
         result2.success = True
@@ -199,9 +271,6 @@ def estimate_dwls(
             RuntimeWarning,
             stacklevel=2,
         )
-
-    # Weight diagonal (for interface compatibility)
-    weight_diag = 1.0 / np.maximum(avar_diag, 1e-10)
 
     return DWLSEstimationResult(
         converged=result.success,

@@ -137,10 +137,13 @@ class Model:
         int_ov_free = kwargs.get("int_ov_free", True)
         int_lv_free = kwargs.get("int_lv_free", False)
 
+        auto_cov_lv_x = kwargs.get("auto_cov_lv_x", False)
+
         self.spec = build_specification(
             model_tokens,
             data.columns.tolist(),
             auto_cov_latent=auto_cov_latent,
+            auto_cov_lv_x=auto_cov_lv_x,
             meanstructure=meanstructure,
             int_ov_free=int_ov_free,
             int_lv_free=int_lv_free,
@@ -210,6 +213,7 @@ class Model:
                 self.spec = build_specification(
                     model_tokens, data.columns.tolist(),
                     auto_cov_latent=kwargs.get("auto_cov_latent", True),
+                    auto_cov_lv_x=auto_cov_lv_x,
                     meanstructure=True,
                 )
                 for i, var in enumerate(self.spec.observed_vars):
@@ -489,9 +493,11 @@ class MultiGroupModel:
         # Filter := tokens
         model_tokens = [tok for tok in tokens if tok.op != ":="]
 
+        auto_cov_lv_x = kwargs.get("auto_cov_lv_x", False)
         self.mg_spec = build_multigroup_spec(
             model_tokens, data, group, invariance=invariance,
             auto_cov_latent=auto_cov_latent,
+            auto_cov_lv_x=auto_cov_lv_x,
             meanstructure=meanstructure,
         )
 
@@ -559,6 +565,7 @@ def sem(model: str, data: pd.DataFrame, group: str = None, **kwargs):
         Fitted model object.
     """
     kwargs.setdefault("auto_cov_latent", False)
+    kwargs.setdefault("auto_cov_lv_x", True)
     if group is not None:
         return MultiGroupModel(model, data, group=group, **kwargs)
     return Model(model, data, **kwargs)

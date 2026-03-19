@@ -145,19 +145,18 @@ class TestSimpleCFA:
 
 # ============================================================
 # Model B: SEM with regressions
-# Note: semla requires explicit exogenous covariance specification,
-# unlike lavaan which adds it automatically.
+# semla auto-adds covariances between exogenous latent variables
+# (matching lavaan's auto.cov.lv.x = TRUE default for sem()).
 # ============================================================
 
 class TestSEMRegression:
-    """3-factor model + speed ~ visual + textual + visual ~~ textual."""
+    """3-factor model + speed ~ visual + textual (exo covs auto-added)."""
 
     MODEL = """
         visual  =~ x1 + x2 + x3
         textual =~ x4 + x5 + x6
         speed   =~ x7 + x8 + x9
         speed ~ visual + textual
-        visual ~~ textual
     """
 
     @pytest.fixture(scope="class")

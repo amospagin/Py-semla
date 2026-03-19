@@ -41,6 +41,7 @@ def build_multigroup_spec(
     group_col: str,
     invariance: str = "configural",
     auto_cov_latent: bool = True,
+    auto_cov_lv_x: bool = False,
     meanstructure: bool = False,
 ) -> MultiGroupSpec:
     """Build multi-group specification from parsed syntax and grouped data.
@@ -56,7 +57,9 @@ def build_multigroup_spec(
     invariance : str
         "configural" (same structure, all free) or "metric" (equal loadings).
     auto_cov_latent : bool
-        Auto-add covariances between latent variables.
+        Auto-add covariances between all latent variables.
+    auto_cov_lv_x : bool
+        Auto-add covariances between exogenous latent variables only.
     """
     if group_col not in data.columns:
         raise ValueError(
@@ -94,6 +97,7 @@ def build_multigroup_spec(
         spec = build_specification(
             tokens, gdata.columns.tolist(),
             auto_cov_latent=auto_cov_latent,
+            auto_cov_lv_x=auto_cov_lv_x,
             meanstructure=meanstructure,
         )
         obs_data = gdata[spec.observed_vars].values

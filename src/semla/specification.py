@@ -219,6 +219,7 @@ def build_specification(
     observed_columns: list[str],
     auto_var: bool = True,
     auto_cov_latent: bool = True,
+    auto_cov_lv_x: bool = False,
     fixed_x: bool = False,
     meanstructure: bool = False,
     int_ov_free: bool = True,
@@ -235,7 +236,11 @@ def build_specification(
     auto_var : bool
         Automatically add residual variances for all variables.
     auto_cov_latent : bool
-        Automatically add covariances between latent variables (CFA default).
+        Automatically add covariances between all latent variables (CFA default).
+    auto_cov_lv_x : bool
+        Automatically add covariances between exogenous latent variables only
+        (those not predicted by ``~``). Used by ``sem()`` to match lavaan's
+        ``auto.cov.lv.x = TRUE`` default.
     fixed_x : bool
         If True, treat exogenous observed variables as fixed (not estimated).
     meanstructure : bool
@@ -390,6 +395,35 @@ def build_specification(
                     S_values[ii, jj] = 0.05
                     S_values[jj, ii] = 0.05
                     params.append(ParamInfo(lv_i, "~~", lv_j, free=True, value=0.05))
+
+    # --- Auto-add covariances between exogenous latent variables (SEM) ---
+    # Matches lavaan's auto.cov.lv.x = TRUE default for sem().
+    # Exogenous latent = defined by =~ but never appears on LHS of ~ and
+    # never appears as an indicator of a higher-order factor (RHS of =~).
+    if auto_cov_lv_x and not auto_cov_latent and len(latent_vars) > 1:
+        endogenous_lv = set()
+        for tok in tokens:
+            if tok.op == "~" and tok.lhs in latent_vars:
+                endogenous_lv.add(tok.lhs)
+            # Latent vars used as indicators of higher-order factors are endogenous
+            if tok.op == "=~":
+                for term in tok.rhs:
+                    if term.var in latent_vars:
+                        endogenous_lv.add(term.var)
+        exogenous_lv = [lv for lv in latent_vars if lv not in endogenous_lv]
+        if len(exogenous_lv) > 1:
+            for i_idx in range(len(exogenous_lv)):
+                for j_idx in range(i_idx + 1, len(exogenous_lv)):
+                    lv_i = exogenous_lv[i_idx]
+                    lv_j = exogenous_lv[j_idx]
+                    ii = spec._idx(lv_i)
+                    jj = spec._idx(lv_j)
+                    if not S_free[ii, jj] and S_values[ii, jj] == 0.0:
+                        S_free[ii, jj] = True
+                        S_free[jj, ii] = True
+                        S_values[ii, jj] = 0.05
+                        S_values[jj, ii] = 0.05
+                        params.append(ParamInfo(lv_i, "~~", lv_j, free=True, value=0.05))
 
     spec.A_free = A_free
     spec.A_values = A_values

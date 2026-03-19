@@ -75,7 +75,7 @@ class TestDWLSEstimation:
 
     def test_cfi_reasonable(self, dwls_fit):
         cfi = dwls_fit.fit_indices()["cfi"]
-        assert 0.7 < cfi < 1.0
+        assert 0.7 < cfi <= 1.0
 
     def test_loadings_significant(self, dwls_fit):
         est = dwls_fit.estimates()
