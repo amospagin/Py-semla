@@ -2,7 +2,10 @@
 
 Model types tested:
 - Higher-order (second-order) factor model
-- Latent growth curve model
+- Linear latent growth curve model
+- Nonlinear (free-loading) growth curve model
+- Cross-lagged panel model
+- fitted() model-implied matrices
 
 Reference values generated from lavaan 0.6-20 using R 4.5.3.
 """
@@ -10,7 +13,7 @@ Reference values generated from lavaan 0.6-20 using R 4.5.3.
 import numpy as np
 import pandas as pd
 import pytest
-from semla import sem, growth
+from semla import cfa, sem, growth
 from semla.datasets import HolzingerSwineford1939
 
 
@@ -62,6 +65,13 @@ def hs_data():
 def growth_data():
     from pathlib import Path
     data_path = Path(__file__).parent.parent / "src" / "semla" / "datasets" / "growth_data.csv"
+    return pd.read_csv(data_path)
+
+
+@pytest.fixture(scope="module")
+def clpm_data():
+    from pathlib import Path
+    data_path = Path(__file__).parent.parent / "src" / "semla" / "datasets" / "clpm_data.csv"
     return pd.read_csv(data_path)
 
 
@@ -170,21 +180,14 @@ class TestHigherOrderCFA:
 # Model B: Linear latent growth curve model
 # ============================================================
 # R code:
-#   set.seed(42)
-#   n <- 200
-#   intercept <- rnorm(n, mean=5, sd=1)
-#   slope <- rnorm(n, mean=0.5, sd=0.5)
+#   set.seed(42); n <- 200
+#   intercept <- rnorm(n, mean=5, sd=1); slope <- rnorm(n, mean=0.5, sd=0.5)
 #   y1 <- intercept + 0*slope + rnorm(n, 0, 0.5)
 #   y2 <- intercept + 1*slope + rnorm(n, 0, 0.5)
 #   y3 <- intercept + 2*slope + rnorm(n, 0, 0.5)
 #   y4 <- intercept + 3*slope + rnorm(n, 0, 0.5)
-#   growth_data <- data.frame(y1, y2, y3, y4)
-#
-#   model <- '
-#     i =~ 1*y1 + 1*y2 + 1*y3 + 1*y4
-#     s =~ 0*y1 + 1*y2 + 2*y3 + 3*y4
-#   '
-#   fit <- growth(model, data=growth_data)
+#   fit <- growth('i=~1*y1+1*y2+1*y3+1*y4; s=~0*y1+1*y2+2*y3+3*y4',
+#                 data=data.frame(y1,y2,y3,y4))
 
 class TestLinearGrowthCurve:
     """Linear growth model with 4 time points."""
@@ -221,11 +224,9 @@ class TestLinearGrowthCurve:
     # -- latent means (intercepts) --
 
     def test_intercept_mean(self, est):
-        """Mean of the intercept factor (~4.928)."""
         _check_param(est, "i", "~1", "1", 4.928, 0.073)
 
     def test_slope_mean(self, est):
-        """Mean of the slope factor (~0.520)."""
         _check_param(est, "s", "~1", "1", 0.520, 0.035)
 
     # -- latent variances --
@@ -252,21 +253,277 @@ class TestLinearGrowthCurve:
     def test_residual_variance(self, est, var, lav_est, lav_se):
         _check_param(est, var, "~~", var, lav_est, lav_se)
 
-    # -- observed intercepts should be fixed to 0 --
+    # -- growth-specific constraints --
 
     def test_observed_intercepts_fixed(self, est):
         """In a growth model, observed intercepts are fixed to 0."""
         intercepts = est[est["op"] == "~1"]
         obs_intercepts = intercepts[intercepts["lhs"].isin(["y1", "y2", "y3", "y4"])]
-        # Should have no free observed intercepts
-        assert len(obs_intercepts) == 0 or not obs_intercepts["free"].any(), (
-            "Observed intercepts should be fixed to 0 in growth models"
-        )
+        assert len(obs_intercepts) == 0 or not obs_intercepts["free"].any()
 
     def test_latent_means_estimated(self, est):
         """Intercept and slope means should be freely estimated."""
         intercepts = est[(est["op"] == "~1") & (est["free"])]
         latent_means = intercepts[intercepts["lhs"].isin(["i", "s"])]
-        assert len(latent_means) == 2, (
-            f"Expected 2 free latent means (i, s), got {len(latent_means)}"
+        assert len(latent_means) == 2
+
+
+# ============================================================
+# Model C: Nonlinear (free-loading) growth curve model
+# ============================================================
+# R code:
+#   (same data as Model B)
+#   model <- '
+#     i =~ 1*y1 + 1*y2 + 1*y3 + 1*y4
+#     s =~ 0*y1 + 1*y2 + NA*y3 + 3*y4
+#   '
+#   fit <- growth(model, data=growth_data)
+
+class TestNonlinearGrowthCurve:
+    """Growth model with one free time loading (y3)."""
+
+    MODEL = """
+        i =~ 1*y1 + 1*y2 + 1*y3 + 1*y4
+        s =~ 0*y1 + 1*y2 + NA*y3 + 3*y4
+    """
+
+    @pytest.fixture(scope="class")
+    def fit(self, growth_data):
+        return growth(self.MODEL, data=growth_data)
+
+    @pytest.fixture(scope="class")
+    def est(self, fit):
+        return fit.estimates()
+
+    @pytest.fixture(scope="class")
+    def fid(self, fit):
+        return fit.fit_indices()
+
+    # -- fit indices --
+
+    @pytest.mark.parametrize("measure,lavaan,tol", [
+        ("chi_square", 1.327, 0.5),
+        ("df", 4, 0),
+        ("cfi", 1.000, 0.005),
+        ("rmsea", 0.000, 0.02),
+        ("srmr", 0.008, 0.01),
+    ])
+    def test_fit_index(self, fid, measure, lavaan, tol):
+        _check_fit(fid, measure, lavaan, tol)
+
+    # -- free time loading for y3 --
+
+    def test_free_loading_y3(self, est):
+        """y3 loading on slope should be freely estimated (~2.124)."""
+        _check_param(est, "s", "=~", "y3", 2.124, 0.082, atol_est=0.05)
+
+    # -- latent means --
+
+    def test_intercept_mean(self, est):
+        _check_param(est, "i", "~1", "1", 4.924, 0.073)
+
+    def test_slope_mean(self, est):
+        _check_param(est, "s", "~1", "1", 0.512, 0.036)
+
+    # -- latent variances --
+
+    def test_intercept_variance(self, est):
+        _check_param(est, "i", "~~", "i", 0.866, 0.109)
+
+    def test_slope_variance(self, est):
+        _check_param(est, "s", "~~", "s", 0.177, 0.026)
+
+    # -- intercept-slope covariance --
+
+    def test_intercept_slope_covariance(self, est):
+        _check_param(est, "i", "~~", "s", 0.007, 0.038, atol_est=0.02)
+
+    # -- residual variances --
+
+    @pytest.mark.parametrize("var,lav_est,lav_se", [
+        ("y1", 0.295, 0.061),
+        ("y2", 0.198, 0.032),
+        ("y3", 0.273, 0.049),
+        ("y4", 0.415, 0.093),
+    ])
+    def test_residual_variance(self, est, var, lav_est, lav_se):
+        _check_param(est, var, "~~", var, lav_est, lav_se)
+
+
+# ============================================================
+# Model D: Cross-lagged panel model (2 waves, 2 variables)
+# ============================================================
+# R code:
+#   set.seed(123); n <- 300
+#   x1 <- rnorm(n, 5, 1); y1 <- 0.3*x1 + rnorm(n, 3, 1)
+#   x2 <- 0.5*x1 + 0.2*y1 + rnorm(n, 0, 0.8)
+#   y2 <- 0.1*x1 + 0.4*y1 + rnorm(n, 0, 0.8)
+#   fit <- sem('x2~x1; y2~y1; x2~y1; y2~x1; x1~~y1; x2~~y2',
+#              data=data.frame(x1,y1,x2,y2))
+
+class TestCrossLaggedPanel:
+    """2-wave cross-lagged panel model with x and y."""
+
+    MODEL = """
+        x2 ~ x1
+        y2 ~ y1
+        x2 ~ y1
+        y2 ~ x1
+        x1 ~~ y1
+        x2 ~~ y2
+    """
+
+    @pytest.fixture(scope="class")
+    def fit(self, clpm_data):
+        return sem(self.MODEL, data=clpm_data)
+
+    @pytest.fixture(scope="class")
+    def est(self, fit):
+        return fit.estimates()
+
+    @pytest.fixture(scope="class")
+    def fid(self, fit):
+        return fit.fit_indices()
+
+    # -- fit: just-identified model (df=0) --
+
+    def test_df_zero(self, fid):
+        assert fid["df"] == 0
+
+    def test_chi_square_zero(self, fid):
+        assert fid["chi_square"] < 0.01
+
+    # -- autoregressive paths --
+
+    def test_ar_x(self, est):
+        """Autoregressive path x1 -> x2 (~0.469)."""
+        _check_param(est, "x2", "~", "x1", 0.469, 0.052)
+
+    def test_ar_y(self, est):
+        """Autoregressive path y1 -> y2 (~0.494)."""
+        _check_param(est, "y2", "~", "y1", 0.494, 0.047)
+
+    # -- cross-lagged paths --
+
+    def test_cl_y1_to_x2(self, est):
+        """Cross-lagged path y1 -> x2 (~0.164)."""
+        _check_param(est, "x2", "~", "y1", 0.164, 0.048)
+
+    def test_cl_x1_to_y2(self, est):
+        """Cross-lagged path x1 -> y2 (~0.092)."""
+        _check_param(est, "y2", "~", "x1", 0.092, 0.051)
+
+    # -- wave 1 covariance --
+
+    def test_wave1_covariance(self, est):
+        _check_param(est, "x1", "~~", "y1", 0.211, 0.056)
+
+    # -- wave 2 residual covariance --
+
+    def test_wave2_residual_covariance(self, est):
+        _check_param(est, "x2", "~~", "y2", 0.031, 0.039, atol_est=0.02)
+
+    # -- variances --
+
+    @pytest.mark.parametrize("var,lav_est,lav_se", [
+        ("x1", 0.892, 0.073),
+        ("y1", 1.021, 0.083),
+    ])
+    def test_exogenous_variance(self, est, var, lav_est, lav_se):
+        _check_param(est, var, "~~", var, lav_est, lav_se)
+
+    @pytest.mark.parametrize("var,lav_est,lav_se", [
+        ("x2", 0.679, 0.055),
+        ("y2", 0.654, 0.053),
+    ])
+    def test_residual_variance(self, est, var, lav_est, lav_se):
+        _check_param(est, var, "~~", var, lav_est, lav_se)
+
+
+# ============================================================
+# Model E: fitted() — model-implied matrices
+# ============================================================
+
+class TestFitted:
+    """Test that fitted() returns correct model-implied moments."""
+
+    @pytest.fixture(scope="class")
+    def cfa_fit(self, hs_data):
+        model = """
+            visual  =~ x1 + x2 + x3
+            textual =~ x4 + x5 + x6
+            speed   =~ x7 + x8 + x9
+        """
+        return cfa(model, data=hs_data)
+
+    @pytest.fixture(scope="class")
+    def cfa_mean_fit(self, hs_data):
+        model = """
+            visual  =~ x1 + x2 + x3
+            textual =~ x4 + x5 + x6
+            speed   =~ x7 + x8 + x9
+        """
+        return cfa(model, data=hs_data, meanstructure=True)
+
+    @pytest.fixture(scope="class")
+    def growth_fit(self, growth_data):
+        model = """
+            i =~ 1*y1 + 1*y2 + 1*y3 + 1*y4
+            s =~ 0*y1 + 1*y2 + 2*y3 + 3*y4
+        """
+        return growth(model, data=growth_data)
+
+    def test_fitted_returns_dict(self, cfa_fit):
+        result = cfa_fit.fitted()
+        assert "cov" in result
+        assert "mean" in result
+
+    def test_fitted_cov_shape(self, cfa_fit):
+        result = cfa_fit.fitted()
+        assert result["cov"].shape == (9, 9)
+
+    def test_fitted_cov_symmetric(self, cfa_fit):
+        cov = cfa_fit.fitted()["cov"].values
+        np.testing.assert_allclose(cov, cov.T, atol=1e-10)
+
+    def test_fitted_cov_positive_diagonal(self, cfa_fit):
+        cov = cfa_fit.fitted()["cov"].values
+        assert np.all(np.diag(cov) > 0)
+
+    def test_fitted_cov_labels(self, cfa_fit):
+        result = cfa_fit.fitted()
+        expected = ["x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9"]
+        assert list(result["cov"].index) == expected
+        assert list(result["cov"].columns) == expected
+
+    def test_fitted_no_mean_without_meanstructure(self, cfa_fit):
+        result = cfa_fit.fitted()
+        assert result["mean"] is None
+
+    def test_fitted_mean_with_meanstructure(self, cfa_mean_fit):
+        result = cfa_mean_fit.fitted()
+        assert result["mean"] is not None
+        assert len(result["mean"]) == 9
+
+    def test_fitted_mean_close_to_sample(self, cfa_mean_fit, hs_data):
+        """Model-implied means should be close to sample means."""
+        result = cfa_mean_fit.fitted()
+        obs_vars = ["x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9"]
+        sample_means = hs_data[obs_vars].mean()
+        np.testing.assert_allclose(
+            result["mean"].values, sample_means.values, atol=0.01
         )
+
+    def test_fitted_residuals_consistency(self, cfa_fit, hs_data):
+        """fitted()['cov'] + residuals() should equal sample covariance."""
+        implied_cov = cfa_fit.fitted()["cov"].values
+        resid = cfa_fit.residuals(type="raw")
+        obs_vars = ["x1", "x2", "x3", "x4", "x5", "x6", "x7", "x8", "x9"]
+        sample_cov = hs_data[obs_vars].cov().values * (len(hs_data) - 1) / len(hs_data)
+        np.testing.assert_allclose(implied_cov + resid, sample_cov, atol=0.01)
+
+    def test_growth_fitted_mean(self, growth_fit, growth_data):
+        """Growth model fitted() should return model-implied means."""
+        result = growth_fit.fitted()
+        assert result["mean"] is not None
+        assert len(result["mean"]) == 4

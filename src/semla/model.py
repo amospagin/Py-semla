@@ -277,6 +277,16 @@ class Model:
         """Return parameter estimates as a DataFrame."""
         return self.results.estimates()
 
+    def fitted(self) -> dict:
+        """Return model-implied covariance matrix and mean vector.
+
+        Returns
+        -------
+        dict
+            ``"cov"`` : pd.DataFrame, ``"mean"`` : pd.Series or None.
+        """
+        return self.results.fitted()
+
     def modindices(self, min_mi: float = 0.0, sort: bool = True) -> pd.DataFrame:
         """Return modification indices for fixed parameters.
 

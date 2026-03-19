@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .estimation import EstimationResult, _compute_se, _model_implied_cov, ml_objective
+from .estimation import EstimationResult, _compute_se, _model_implied_cov, _model_implied_mean, ml_objective
 from .specification import ModelSpecification, build_specification
 from .syntax import FormulaToken, parse_syntax
 
@@ -337,6 +337,33 @@ class ModelResults:
             })
 
         return pd.DataFrame(rows)
+
+    def fitted(self) -> dict:
+        """Return model-implied moments (covariance matrix and mean vector).
+
+        Returns
+        -------
+        dict
+            ``"cov"`` : pd.DataFrame — model-implied covariance matrix.
+            ``"mean"`` : pd.Series or None — model-implied mean vector
+            (only when meanstructure=True).
+        """
+        obs = self._spec.observed_vars
+        A_opt, S_opt = self._spec.unpack(self._theta)
+        sigma = _model_implied_cov(A_opt, S_opt, self._spec.F)
+        if sigma is None:
+            raise RuntimeError("Cannot compute model-implied covariance.")
+
+        result = {"cov": pd.DataFrame(sigma, index=obs, columns=obs)}
+
+        if self._spec.meanstructure and self._spec.m_values is not None:
+            m_est = self._spec.unpack_m(self._theta)
+            mu = _model_implied_mean(A_opt, m_est, self._spec.F)
+            result["mean"] = pd.Series(mu, index=obs) if mu is not None else None
+        else:
+            result["mean"] = None
+
+        return result
 
     def residuals(self, type: str = "raw") -> np.ndarray:
         """Return residual covariance matrix (observed - implied).
