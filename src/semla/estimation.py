@@ -259,11 +259,15 @@ def _compute_se(
     A, S_mat = spec.unpack(theta)
     sigma = _model_implied_cov(A, S_mat, spec.F)
     if sigma is None:
+        if return_vcov:
+            return np.full(k, np.nan), np.full((k, k), np.nan)
         return np.full(k, np.nan)
 
     try:
         sigma_inv = np.linalg.inv(sigma)
     except np.linalg.LinAlgError:
+        if return_vcov:
+            return np.full(k, np.nan), np.full((k, k), np.nan)
         return np.full(k, np.nan)
 
     # Compute dSigma/dtheta_i numerically (central differences)
@@ -282,6 +286,8 @@ def _compute_se(
         sig_m = _model_implied_cov(A_m, S_m, spec.F)
 
         if sig_p is None or sig_m is None:
+            if return_vcov:
+                return np.full(k, np.nan), np.full((k, k), np.nan)
             return np.full(k, np.nan)
 
         dSigma[i] = (sig_p - sig_m) / (2 * eps)

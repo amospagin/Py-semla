@@ -6,6 +6,7 @@ from .batch_bayes import batch_bayes
 from .comparisons import chi_square_diff_test, compare_models
 from .diagnostics import mardia_test
 from .invariance import measurementInvariance
+from .longitudinal import longitudinalInvariance
 from .irt import irt, IRTModel
 from . import datasets
 from . import priors
@@ -29,7 +30,7 @@ def set_host_devices(n: int) -> None:
 __all__ = [
     "Model", "MultiGroupModel", "cfa", "sem", "growth", "irt", "IRTModel",
     "batch_bayes", "chi_square_diff_test", "compare_models", "mardia_test",
-    "measurementInvariance", "datasets", "priors",
+    "measurementInvariance", "longitudinalInvariance", "datasets", "priors",
     "simulate_power",
     "set_host_devices", "__version__",
 ]
