@@ -331,6 +331,10 @@ class Model:
         """Return estimates for user-defined parameters (:= operator)."""
         return self.results.defined_estimates()
 
+    def check(self) -> str:
+        """Run post-estimation diagnostics and return a summary."""
+        return self.results.check()
+
     def residuals(self, type: str = "raw") -> np.ndarray:
         """Return residual covariance matrix (observed - implied)."""
         return self.results.residuals(type=type)

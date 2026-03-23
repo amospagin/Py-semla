@@ -337,11 +337,19 @@ def estimate(
                 result = result2
 
     if not result.success:
-        warnings.warn(
-            f"Optimization did not converge: {result.message}",
-            RuntimeWarning,
-            stacklevel=2,
+        # Compute diagnostic info
+        grad = ml_gradient(result.x, spec, sample_cov, n_obs, sample_mean)
+        grad_norm = float(np.linalg.norm(grad))
+        msg = (
+            f"Model did not converge after {result.nit} iterations.\n"
+            f"  Diagnostic: gradient norm = {grad_norm:.2e}, "
+            f"f(x) = {result.fun:.6f}\n"
+            f"  Possible causes:\n"
+            f"  - Model may be misspecified (check syntax and path diagram)\n"
+            f"  - Model may be empirically underidentified\n"
+            f"  - Try different starting values or add constraints"
         )
+        warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
     # Center data for potential MLR Gamma computation
     centered_data = obs_data - obs_data.mean(axis=0)

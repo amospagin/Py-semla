@@ -95,11 +95,158 @@ class ModelResults:
             )
             warnings.warn(
                 f"Negative variance estimate(s) detected (Heywood case): "
-                f"{var_list}. This may indicate model misspecification, "
-                f"too few observations, or empirical underidentification.",
+                f"{var_list}.\n"
+                f"  This usually indicates:\n"
+                f"  - Too few indicators per factor (need 3+)\n"
+                f"  - Cross-loading or correlated residual not modeled\n"
+                f"  - Sample too small for model complexity\n"
+                f"  Consider: fit.modindices(min_mi=5) to check for missing paths,\n"
+                f"  or fit.check() for a full diagnostic summary.",
                 RuntimeWarning,
                 stacklevel=4,
             )
+
+    def check(self) -> str:
+        """Run post-estimation diagnostics and return a summary.
+
+        Checks for:
+        - Non-convergence
+        - Heywood cases (negative variances)
+        - Parameters at boundaries (variance near 0, correlation near +/-1)
+        - Empirical underidentification (ill-conditioned information matrix)
+        - Large standardized residuals
+
+        Returns
+        -------
+        str
+            Diagnostic summary (also printed).
+        """
+        issues = []
+        A_opt, S_opt = self._spec.unpack(self._theta)
+
+        # 1. Convergence
+        if not self.converged:
+            issues.append(
+                "NON-CONVERGENCE: Model did not converge.\n"
+                "  - Check model specification for errors\n"
+                "  - Model may be empirically underidentified\n"
+                "  - Try simplifying the model or adding constraints"
+            )
+
+        # 2. Heywood cases (negative variances)
+        for p in self._spec.params:
+            if p.op == "~~" and p.lhs == p.rhs and p.free:
+                i = self._spec._idx(p.lhs)
+                val = S_opt[i, i]
+                if val < 0:
+                    issues.append(
+                        f"HEYWOOD CASE: Negative variance for '{p.lhs}' "
+                        f"({val:.4f}).\n"
+                        f"  - Check if this indicator belongs on this factor\n"
+                        f"  - Consider adding cross-loadings or "
+                        f"correlated residuals\n"
+                        f"  - Run fit.modindices(min_mi=5) for suggestions"
+                    )
+
+        # 3. Near-zero variances (boundary)
+        for p in self._spec.params:
+            if p.op == "~~" and p.lhs == p.rhs and p.free:
+                i = self._spec._idx(p.lhs)
+                val = S_opt[i, i]
+                if 0 <= val < 0.001:
+                    issues.append(
+                        f"BOUNDARY: Variance for '{p.lhs}' is near zero "
+                        f"({val:.6f}).\n"
+                        f"  - This variable may be perfectly predicted\n"
+                        f"  - Check for redundant indicators or paths"
+                    )
+
+        # 4. Correlations near +/-1
+        n_vars = self._spec.n_vars
+        I_mat = np.eye(n_vars)
+        try:
+            IminA_inv = np.linalg.inv(I_mat - A_opt)
+            total_cov = IminA_inv @ S_opt @ IminA_inv.T
+            total_sd = np.sqrt(np.maximum(np.diag(total_cov), 1e-20))
+            for p in self._spec.params:
+                if p.op == "~~" and p.lhs != p.rhs and p.free:
+                    i = self._spec._idx(p.lhs)
+                    j = self._spec._idx(p.rhs)
+                    if total_sd[i] > 0 and total_sd[j] > 0:
+                        corr = total_cov[i, j] / (total_sd[i] * total_sd[j])
+                        if abs(corr) > 0.99:
+                            issues.append(
+                                f"BOUNDARY: Correlation between '{p.lhs}' "
+                                f"and '{p.rhs}' is near "
+                                f"{'1' if corr > 0 else '-1'} "
+                                f"({corr:.4f}).\n"
+                                f"  - These variables may be empirically "
+                                f"indistinguishable\n"
+                                f"  - Consider merging factors or "
+                                f"removing redundant paths"
+                            )
+        except np.linalg.LinAlgError:
+            issues.append(
+                "NUMERICAL: Cannot compute total covariance matrix "
+                "(singular I-A)."
+            )
+
+        # 5. Information matrix condition number
+        if self._vcov is not None:
+            try:
+                info = np.linalg.inv(self._vcov)
+                cond = np.linalg.cond(info)
+                if cond > 1e10:
+                    issues.append(
+                        f"IDENTIFICATION: Information matrix is "
+                        f"ill-conditioned (condition number = {cond:.2e}).\n"
+                        f"  - Model may be empirically underidentified\n"
+                        f"  - Some parameters may not be estimable\n"
+                        f"  - Check for redundant parameters or paths"
+                    )
+            except np.linalg.LinAlgError:
+                issues.append(
+                    "IDENTIFICATION: Information matrix is singular.\n"
+                    "  - Model is not identified — some parameters "
+                    "cannot be estimated"
+                )
+
+        # 6. Large standardized residuals
+        try:
+            std_resid = self.residuals(type="standardized")
+            p = std_resid.shape[0]
+            mask = np.tril(np.ones((p, p), dtype=bool), -1)
+            large = np.abs(std_resid[mask]) > 0.10
+            n_large = int(np.sum(large))
+            if n_large > 0:
+                # Find the largest
+                max_idx = np.unravel_index(
+                    np.argmax(np.abs(std_resid * np.tril(np.ones_like(std_resid), -1))),
+                    std_resid.shape,
+                )
+                obs = self._spec.observed_vars
+                max_val = std_resid[max_idx]
+                issues.append(
+                    f"MISFIT: {n_large} standardized residual(s) > |0.10|. "
+                    f"Largest: {obs[max_idx[0]]} ~~ {obs[max_idx[1]]} "
+                    f"({max_val:.3f}).\n"
+                    f"  - Consider adding correlated residuals or "
+                    f"cross-loadings\n"
+                    f"  - Run fit.modindices() for specific suggestions"
+                )
+        except Exception:
+            pass
+
+        # Format output
+        if not issues:
+            output = "No issues detected. Model looks OK."
+        else:
+            output = f"{len(issues)} issue(s) detected:\n\n" + "\n\n".join(
+                f"  {i+1}. {issue}" for i, issue in enumerate(issues)
+            )
+
+        print(output)
+        return output
 
     # --- Fit indices ---
 
