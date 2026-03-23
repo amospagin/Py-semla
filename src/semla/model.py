@@ -143,6 +143,11 @@ class Model:
 
         auto_cov_lv_x = kwargs.get("auto_cov_lv_x", False)
 
+        # Fixed exogenous observed variables (sem() default: fixed.x=TRUE)
+        fixed_x = kwargs.get("fixed_x", False)
+        if fixed_x:
+            model_tokens = self._add_fixed_exo_covs(model_tokens, data)
+
         self.spec = build_specification(
             model_tokens,
             data.columns.tolist(),
@@ -282,6 +287,72 @@ class Model:
         }
 
         self.results = run_mcmc(self.spec, data_array, **bayes_kwargs)
+
+    def _add_fixed_exo_covs(self, tokens, data):
+        """Add fixed exogenous observed covariances to the token list.
+
+        Matches lavaan's fixed.x=TRUE behavior for sem(). Exogenous =
+        observed variables that appear only as predictors (RHS of ~),
+        never as outcomes (LHS of ~ or as indicators in =~).
+        """
+        from .syntax import FormulaToken, RHSTerm
+
+        data_cols = set(data.columns)
+        latent_vars = {t.lhs for t in tokens if t.op == "=~"}
+
+        # Find endogenous observed vars
+        endogenous = set()
+        for tok in tokens:
+            if tok.op == "=~":
+                for t in tok.rhs:
+                    if t.var in data_cols and t.var not in latent_vars:
+                        endogenous.add(t.var)
+            elif tok.op == "~" and tok.lhs in data_cols and tok.lhs not in latent_vars:
+                endogenous.add(tok.lhs)
+
+        # Find exogenous observed vars (appear as predictors but not endogenous)
+        referenced_obs = set()
+        for tok in tokens:
+            if tok.op == "~":
+                for t in tok.rhs:
+                    if t.var in data_cols and t.var not in latent_vars:
+                        referenced_obs.add(t.var)
+
+        exogenous = sorted(referenced_obs - endogenous)
+        if len(exogenous) < 1:
+            return tokens
+
+        # Compute sample statistics (ML: divide by N)
+        exo_data = data[exogenous].dropna().values
+        sample_cov = np.cov(exo_data, rowvar=False, ddof=0)
+        if sample_cov.ndim == 0:
+            sample_cov = sample_cov.reshape(1, 1)
+
+        # Collect variables mentioned in user ~~ specifications
+        user_cov_vars = set()
+        for tok in tokens:
+            if tok.op == "~~":
+                user_cov_vars.add(tok.lhs)
+                for t in tok.rhs:
+                    user_cov_vars.add(t.var)
+
+        # Only add covariances for exogenous vars not mentioned in any user ~~
+        exogenous = [v for v in exogenous if v not in user_cov_vars]
+        if len(exogenous) < 1:
+            return tokens
+
+        # Add FREE variance/covariance tokens for exogenous observed vars
+        # (matches lavaan's auto.cov.x behavior — ensures covariances are modeled)
+        new_tokens = list(tokens)
+        for i, vi in enumerate(exogenous):
+            for j in range(i + 1, len(exogenous)):
+                vj = exogenous[j]
+                new_tokens.append(FormulaToken(
+                    lhs=vi, op="~~",
+                    rhs=[RHSTerm(var=vj)],
+                ))
+
+        return new_tokens
 
     def summary(self) -> str:
         """Print and return a lavaan-style summary."""
@@ -584,6 +655,7 @@ def sem(model: str, data: pd.DataFrame, group: str = None, **kwargs):
     """
     kwargs.setdefault("auto_cov_latent", False)
     kwargs.setdefault("auto_cov_lv_x", True)
+    kwargs.setdefault("fixed_x", True)
     if group is not None:
         return MultiGroupModel(model, data, group=group, **kwargs)
     return Model(model, data, **kwargs)
