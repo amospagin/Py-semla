@@ -247,6 +247,60 @@ def build_multigroup_spec(
     )
 
 
+def free_constraints(mg_spec: MultiGroupSpec, param_indices: list[int]) -> MultiGroupSpec:
+    """Create a new MultiGroupSpec with specific parameters freed across groups.
+
+    Parameters
+    ----------
+    mg_spec : MultiGroupSpec
+        Original spec with some parameters constrained equal.
+    param_indices : list[int]
+        Indices into the per-group theta vector of parameters to free.
+        These parameters will get separate indices per group.
+
+    Returns
+    -------
+    MultiGroupSpec
+        New spec with modified theta_mapping.
+    """
+    import copy
+    n_groups = len(mg_spec.group_names)
+    old_mapping = [m.copy() for m in mg_spec.theta_mapping]
+    k_per_group = len(old_mapping[0])
+
+    # Find which combined-theta indices are currently shared (constrained)
+    # and which ones we need to split
+    next_idx = mg_spec.n_free_combined
+
+    new_mapping = [m.copy() for m in old_mapping]
+
+    for param_idx in param_indices:
+        if param_idx >= k_per_group:
+            continue
+        # Check if this parameter is actually constrained (same index across groups)
+        combined_indices = [old_mapping[g][param_idx] for g in range(n_groups)]
+        if len(set(combined_indices)) == 1:
+            # Currently constrained — give each group its own index
+            # Keep group 0 at the original index, give others new indices
+            for g in range(1, n_groups):
+                new_mapping[g][param_idx] = next_idx
+                next_idx += 1
+
+    new_n_free = next_idx
+
+    return MultiGroupSpec(
+        group_names=mg_spec.group_names,
+        group_specs=mg_spec.group_specs,
+        group_sample_covs=mg_spec.group_sample_covs,
+        group_sample_means=mg_spec.group_sample_means,
+        group_n_obs=mg_spec.group_n_obs,
+        n_total=mg_spec.n_total,
+        invariance=mg_spec.invariance + "_partial",
+        theta_mapping=new_mapping,
+        n_free_combined=new_n_free,
+    )
+
+
 def _pack_multigroup_start(mg_spec: MultiGroupSpec) -> np.ndarray:
     """Pack starting values into the combined theta vector."""
     theta = np.zeros(mg_spec.n_free_combined)
